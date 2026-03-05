@@ -1,0 +1,17 @@
+listen_addr: ":8080"
+mcp_token: "change-me"
+worker:
+  url: "http://koala-worker:8090"
+runtime:
+  queue_size: 64
+  freshness_window_seconds: 90
+zones:
+  - id: "front_door"
+    name: "Front Door"
+cameras:
+  - id: "cam_front_1"
+    name: "Front Door Camera"
+    rtsp_url: "rtsp://dvr.local:554/ch1"
+    zone_id: "front_door"
+    front_door: true
+    probe_at_boot: true

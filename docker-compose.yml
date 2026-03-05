@@ -1,0 +1,19 @@
+version: "3.9"
+services:
+  koala-worker:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.worker
+    ports:
+      - "8090:8090"
+
+  koala-orchestrator:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.orchestrator
+    depends_on:
+      - koala-worker
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./configs/koala.yaml:/app/configs/koala.yaml:ro
