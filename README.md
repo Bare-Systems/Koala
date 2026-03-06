@@ -38,6 +38,7 @@ All update APIs require `Authorization: Bearer <mcp_token>`.
 - `GET /admin/updates/security`
 - `GET /admin/updates/rollouts/list`
 - `GET /admin/updates/history`
+- `GET /admin/ingest/status`
 - `POST /admin/updates/check`
 - `POST /admin/updates/stage`
 - `POST /admin/updates/apply`

@@ -59,6 +59,7 @@ func main() {
 	var updater *update.Manager
 	var agent update.Agent
 	var poller *update.Poller
+	var ingestManager *ingest.Manager
 	if cfg.Update.Enabled {
 		executor := update.NewHTTPExecutor(cfg.MCPToken, 3*time.Second)
 		updater = update.NewManager(cfg.Service.Version, "0.1.0-dev", cfg.Service.DeviceID, cfg.Service.Address, cfg.Service.Version, executor)
@@ -125,8 +126,9 @@ func main() {
 	if cfg.Runtime.EnableStreamWorkers {
 		sampleEvery := time.Second / time.Duration(cfg.Runtime.StreamSampleFPS)
 		captureTimeout := time.Duration(cfg.Runtime.StreamCaptureTimeoutS) * time.Second
-		streamManager := ingest.NewManager(registry, svc, ingest.NewFFMpegSnapshotter(), sampleEvery, captureTimeout)
-		streamManager.Start(ctx)
+		snapshotter := ingest.NewPersistentFFMpegSnapshotter(cfg.Runtime.StreamSampleFPS)
+		ingestManager = ingest.NewManager(registry, svc, snapshotter, sampleEvery, captureTimeout)
+		ingestManager.Start(ctx)
 	}
 	if poller != nil {
 		poller.Start(ctx)
@@ -150,7 +152,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:         cfg.ListenAddr,
-		Handler:      mcp.NewServer(cfg.MCPToken, svc, updater, agent, poller, auditStore).Routes(),
+		Handler:      mcp.NewServer(cfg.MCPToken, svc, updater, agent, poller, ingestManager, auditStore).Routes(),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
 	}

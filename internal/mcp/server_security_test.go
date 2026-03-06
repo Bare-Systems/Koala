@@ -37,7 +37,7 @@ func (fakeSecurityAgent) Health(context.Context) (map[string]any, error) {
 func TestUpdateSecurityEndpoint(t *testing.T) {
 	registry := camera.NewRegistry([]camera.Camera{{ID: "cam1", ZoneID: "front_door", FrontDoor: true}})
 	svc := service.New(registry, state.NewAggregator(time.Minute), fakeInferenceClient{}, 2)
-	h := NewServer("test-token", svc, nil, fakeSecurityAgent{}, nil, nil).Routes()
+	h := NewServer("test-token", svc, nil, fakeSecurityAgent{}, nil, nil, nil).Routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/updates/security", nil)
 	req.Header.Set("Authorization", "Bearer test-token")

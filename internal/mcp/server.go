@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/barelabs/koala/internal/audit"
+	"github.com/barelabs/koala/internal/ingest"
 	"github.com/barelabs/koala/internal/service"
 	"github.com/barelabs/koala/internal/update"
 )
@@ -20,11 +21,12 @@ type Server struct {
 	updater    *update.Manager
 	agent      update.Agent
 	poller     *update.Poller
+	ingest     *ingest.Manager
 	auditStore audit.Store
 }
 
-func NewServer(token string, svc *service.Service, updater *update.Manager, agent update.Agent, poller *update.Poller, auditStore audit.Store) *Server {
-	return &Server{token: token, service: svc, updater: updater, agent: agent, poller: poller, auditStore: auditStore}
+func NewServer(token string, svc *service.Service, updater *update.Manager, agent update.Agent, poller *update.Poller, ingestManager *ingest.Manager, auditStore audit.Store) *Server {
+	return &Server{token: token, service: svc, updater: updater, agent: agent, poller: poller, ingest: ingestManager, auditStore: auditStore}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -45,6 +47,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/admin/updates/rollouts/start", s.wrapAuth(s.rolloutStart))
 	mux.HandleFunc("/admin/updates/rollouts/get", s.wrapAuth(s.rolloutGet))
 	mux.HandleFunc("/admin/updates/rollouts/list", s.wrapAuth(s.rolloutList))
+	mux.HandleFunc("/admin/ingest/status", s.wrapAuth(s.ingestStatus))
 
 	mux.HandleFunc("/agent/updates/health", s.wrapAuth(s.agentHealth))
 	mux.HandleFunc("/agent/updates/stage", s.wrapAuth(s.agentStage))
@@ -235,6 +238,19 @@ func (s *Server) updateStatus(w http.ResponseWriter, _ *http.Request) {
 			"devices": s.updater.Status(),
 			"poller":  pollerStatus(s.poller),
 		},
+	})
+}
+
+func (s *Server) ingestStatus(w http.ResponseWriter, _ *http.Request) {
+	if s.ingest == nil {
+		http.Error(w, "ingest workers are not configured", http.StatusNotImplemented)
+		return
+	}
+	status := s.ingest.Status()
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "ingest worker status snapshot",
+		"data":        status,
 	})
 }
 

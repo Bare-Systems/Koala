@@ -21,7 +21,7 @@ func TestUpdateHistoryEndpoint(t *testing.T) {
 
 	registry := camera.NewRegistry([]camera.Camera{{ID: "cam1", ZoneID: "front_door", FrontDoor: true}})
 	svc := service.New(registry, state.NewAggregator(time.Minute), fakeInferenceClient{}, 2)
-	h := NewServer("test-token", svc, nil, nil, nil, store).Routes()
+	h := NewServer("test-token", svc, nil, nil, nil, nil, store).Routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/updates/history", nil)
 	req.Header.Set("Authorization", "Bearer test-token")

@@ -37,7 +37,7 @@ func newServerWithRollouts() http.Handler {
 	registry := camera.NewRegistry([]camera.Camera{{ID: "cam1", ZoneID: "front_door", FrontDoor: true}})
 	svc := service.New(registry, state.NewAggregator(time.Minute), fakeInferenceClient{}, 2)
 	updater := update.NewManager("0.1.0-dev", "0.1.0-dev", "koala-local", "http://127.0.0.1:8080", "0.1.0", update.NoopExecutor{})
-	return NewServer("test-token", svc, updater, nil, nil, nil).Routes()
+	return NewServer("test-token", svc, updater, nil, nil, nil, nil).Routes()
 }
 
 func TestRolloutEndpoints_StartGetList(t *testing.T) {
