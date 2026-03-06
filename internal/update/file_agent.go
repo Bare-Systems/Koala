@@ -243,7 +243,7 @@ func (a *FileAgent) Health(_ context.Context) (map[string]any, error) {
 	if a.staged != nil {
 		staged = a.staged.Version
 	}
-	return map[string]any{
+	health := map[string]any{
 		"status":           a.status,
 		"current_version":  a.current,
 		"previous_version": a.previous,
@@ -251,5 +251,14 @@ func (a *FileAgent) Health(_ context.Context) (map[string]any, error) {
 		"last_error":       a.lastError,
 		"staging_dir":      a.stagingDir,
 		"active_dir":       a.activeDir,
-	}, nil
+	}
+	if telemetry, ok := a.verifier.(interface{ UnknownKeyStats() UnknownKeyStats }); ok {
+		health["unknown_key_attempts"] = telemetry.UnknownKeyStats()
+	}
+	if alerts, ok := a.verifier.(interface {
+		RecentUnknownKeyAlerts(limit int) []UnknownKeyAlert
+	}); ok {
+		health["unknown_key_alerts"] = alerts.RecentUnknownKeyAlerts(50)
+	}
+	return health, nil
 }

@@ -78,3 +78,61 @@ func TestValidateUpdateRotationPreviousMissingKey(t *testing.T) {
 		t.Fatalf("expected validation error for missing previous key")
 	}
 }
+
+func TestValidateRotationOnlyRejectsLegacyKey(t *testing.T) {
+	cfg := Config{
+		MCPToken: "token",
+		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Update: UpdateConfig{
+			Enabled:             true,
+			RotationOnlyMode:    true,
+			PublicKeyBase64:     "legacy",
+			ActiveKeyID:         "key-2026-03",
+			PublicKeys:          map[string]string{"key-2026-03": "abc"},
+			EncryptionKeyBase64: "xyz",
+		},
+		Cameras: []CameraConfig{{ID: "cam1", ZoneID: "front_door"}},
+	}
+	cfg.applyDefaults()
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected validation error for legacy key in rotation-only mode")
+	}
+}
+
+func TestValidateLegacyModeAllowsPublicKeyBase64(t *testing.T) {
+	cfg := Config{
+		MCPToken: "token",
+		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Update: UpdateConfig{
+			Enabled:             true,
+			RotationOnlyMode:    false,
+			PublicKeyBase64:     "legacy",
+			EncryptionKeyBase64: "xyz",
+		},
+		Cameras: []CameraConfig{{ID: "cam1", ZoneID: "front_door"}},
+	}
+	cfg.applyDefaults()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected legacy mode to allow public_key_base64: %v", err)
+	}
+}
+
+func TestValidatePollRequiresManifestURL(t *testing.T) {
+	cfg := Config{
+		MCPToken: "token",
+		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Update: UpdateConfig{
+			Enabled:             true,
+			RotationOnlyMode:    false,
+			PublicKeyBase64:     "legacy",
+			EncryptionKeyBase64: "xyz",
+			PollEnabled:         true,
+			ManifestURL:         "",
+		},
+		Cameras: []CameraConfig{{ID: "cam1", ZoneID: "front_door"}},
+	}
+	cfg.applyDefaults()
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected validation error for missing poll manifest_url")
+	}
+}

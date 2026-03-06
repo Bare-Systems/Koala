@@ -35,10 +35,15 @@ All tools require `Authorization: Bearer <mcp_token>`.
 All update APIs require `Authorization: Bearer <mcp_token>`.
 
 - `GET /admin/updates/status`
+- `GET /admin/updates/security`
+- `GET /admin/updates/rollouts/list`
+- `GET /admin/updates/history`
 - `POST /admin/updates/check`
 - `POST /admin/updates/stage`
 - `POST /admin/updates/apply`
 - `POST /admin/updates/rollback`
+- `POST /admin/updates/rollouts/start`
+- `POST /admin/updates/rollouts/get`
 
 Device agent endpoints (called by orchestrator update executor):
 
@@ -68,14 +73,46 @@ Manifest payload shape:
 
 Signature payload is the newline-joined fields:
 
-`version`, `artifact_url`, `sha256`, `created_at`, `min_orchestrator_version`, `min_worker_version`
+`key_id`, `version`, `artifact_url`, `sha256`, `created_at`, `min_orchestrator_version`, `min_worker_version`
 
-When `update.enabled=true`, all are required:
-- `update.public_key_base64` (Ed25519 verification key)
-- or rotating key config: `update.active_key_id`, `update.previous_keys`, and `update.public_keys`
-- `update.encryption_key_base64` (AES-256-GCM decryption key)
+When `update.enabled=true`, `update.encryption_key_base64` is required, plus one signing mode:
+- Legacy mode: `update.public_key_base64` (deprecated)
+- Rotation mode: `update.active_key_id`, `update.previous_keys`, and `update.public_keys`
+
+Set `update.rotation_only_mode: true` to enforce rotation-only mode and reject legacy `public_key_base64`.
 
 The agent now expects `artifact_url` to point to an encrypted/signed bundle JSON, not a raw binary artifact.
+Unknown `key_id` signature attempts are tracked in agent health under `unknown_key_attempts` and emit security alert logs.
+`GET /admin/updates/security` returns those counters plus recent unknown-key alert events.
+`GET /admin/updates/history` returns persisted rollout/security events from SQLite (`update.audit_db_path`).
+
+Rollout start input additionally supports:
+- `mode`: `all`, `batch`, `canary`
+- `batch_size`: required for `batch`; optional for `canary`
+- `max_failures`: stop rollout if failures exceed this threshold
+- `pause_between_batches_ms`: optional delay between batches
+- `rollback_scope`: `failed` or `batch`
+
+Pull mode configuration (client-initiated updates):
+
+- `update.poll_enabled`: enable periodic manifest polling
+- `update.poll_interval_seconds`: base polling interval
+- `update.poll_jitter_seconds`: random jitter added per cycle
+- `update.manifest_url`: manifest URL to poll
+
+`GET /admin/updates/status` includes `data.poller` with latest poll result, last/next poll time, and failure counters.
+Poll events are persisted in SQLite and available via `GET /admin/updates/history` with `category=\"poll\"`.
+
+## Stream ingest
+
+The orchestrator can continuously pull frames from RTSP cameras and feed inference automatically.
+
+Runtime controls:
+- `runtime.enable_stream_workers`
+- `runtime.stream_sample_fps`
+- `runtime.stream_capture_timeout_seconds`
+
+Current implementation captures snapshots via `ffmpeg`, so `ffmpeg` must be installed on the device.
 
 Staging/apply storage:
 

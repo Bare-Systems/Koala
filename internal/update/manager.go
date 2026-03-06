@@ -60,6 +60,7 @@ type Manager struct {
 	executor            Executor
 	devices             map[string]Device
 	staged              map[string]Manifest
+	rollouts            map[string]Rollout
 }
 
 func NewManager(orchestratorVersion string, workerVersion string, localDeviceID string, localAddress string, currentVersion string, executor Executor) *Manager {
@@ -89,6 +90,7 @@ func NewManager(orchestratorVersion string, workerVersion string, localDeviceID 
 		executor:            executor,
 		devices:             map[string]Device{localDeviceID: device},
 		staged:              map[string]Manifest{},
+		rollouts:            map[string]Rollout{},
 	}
 }
 

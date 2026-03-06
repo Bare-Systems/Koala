@@ -8,17 +8,26 @@ worker:
   url: "http://koala-worker:8090"
 update:
   enabled: false
+  rotation_only_mode: false
+  poll_enabled: false
+  poll_interval_seconds: 300
+  poll_jitter_seconds: 30
+  manifest_url: ""
   active_key_id: "key-2026-03"
   previous_keys: []
   public_keys:
     key-2026-03: ""
   public_key_base64: ""
   encryption_key_base64: ""
+  audit_db_path: "/tmp/koala/audit/events.db"
   staging_dir: "/tmp/koala/staging"
   active_dir: "/tmp/koala/active"
 runtime:
   queue_size: 64
   freshness_window_seconds: 90
+  enable_stream_workers: true
+  stream_sample_fps: 1
+  stream_capture_timeout_seconds: 5
 zones:
   - id: "front_door"
     name: "Front Door"

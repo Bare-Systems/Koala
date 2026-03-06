@@ -59,7 +59,7 @@ func TestServer_CheckPackageContract(t *testing.T) {
 	}})
 
 	svc := service.New(registry, agg, fakeInferenceClient{}, 2)
-	h := NewServer("test-token", svc, nil, nil).Routes()
+	h := NewServer("test-token", svc, nil, nil, nil, nil).Routes()
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp/tools/koala.check_package_at_door", bytes.NewBufferString(`{"input":{}}`))
 	req.Header.Set("Authorization", "Bearer test-token")
@@ -88,7 +88,7 @@ func TestServer_CheckPackageContract(t *testing.T) {
 func TestServer_AuthRequired(t *testing.T) {
 	registry := camera.NewRegistry([]camera.Camera{{ID: "cam_front_1", ZoneID: "front_door", FrontDoor: true}})
 	svc := service.New(registry, state.NewAggregator(time.Minute), fakeInferenceClient{}, 2)
-	h := NewServer("test-token", svc, nil, nil).Routes()
+	h := NewServer("test-token", svc, nil, nil, nil, nil).Routes()
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp/tools/koala.get_system_health", nil)
 	res := httptest.NewRecorder()
@@ -105,7 +105,7 @@ func TestServer_DegradedResponse(t *testing.T) {
 	svc.Submit(service.FrameTask{CameraID: "cam_front_1", ZoneID: "front_door", Captured: time.Now().UTC()})
 	svc.WorkerHealthy(context.Background())
 
-	h := NewServer("test-token", svc, nil, nil).Routes()
+	h := NewServer("test-token", svc, nil, nil, nil, nil).Routes()
 	req := httptest.NewRequest(http.MethodPost, "/mcp/tools/koala.get_zone_state", bytes.NewBufferString(`{"input":{"zone_id":"front_door"}}`))
 	req.Header.Set("Authorization", "Bearer test-token")
 	res := httptest.NewRecorder()

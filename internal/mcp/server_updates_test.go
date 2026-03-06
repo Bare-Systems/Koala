@@ -36,7 +36,7 @@ func newServerWithUpdater() http.Handler {
 	svc := service.New(registry, state.NewAggregator(time.Minute), fakeInferenceClient{}, 2)
 	updater := update.NewManager("0.1.0-dev", "0.1.0-dev", "koala-local", "http://127.0.0.1:8080", "0.1.0", update.NoopExecutor{})
 	agent := update.NewMemoryAgent("0.1.0")
-	return NewServer("test-token", svc, updater, agent).Routes()
+	return NewServer("test-token", svc, updater, agent, nil, nil).Routes()
 }
 
 func TestUpdateEndpoints_Flow(t *testing.T) {

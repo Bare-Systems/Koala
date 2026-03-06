@@ -9,19 +9,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/barelabs/koala/internal/audit"
 	"github.com/barelabs/koala/internal/service"
 	"github.com/barelabs/koala/internal/update"
 )
 
 type Server struct {
-	token   string
-	service *service.Service
-	updater *update.Manager
-	agent   update.Agent
+	token      string
+	service    *service.Service
+	updater    *update.Manager
+	agent      update.Agent
+	poller     *update.Poller
+	auditStore audit.Store
 }
 
-func NewServer(token string, svc *service.Service, updater *update.Manager, agent update.Agent) *Server {
-	return &Server{token: token, service: svc, updater: updater, agent: agent}
+func NewServer(token string, svc *service.Service, updater *update.Manager, agent update.Agent, poller *update.Poller, auditStore audit.Store) *Server {
+	return &Server{token: token, service: svc, updater: updater, agent: agent, poller: poller, auditStore: auditStore}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -37,6 +40,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/admin/updates/stage", s.wrapAuth(s.updateStage))
 	mux.HandleFunc("/admin/updates/apply", s.wrapAuth(s.updateApply))
 	mux.HandleFunc("/admin/updates/rollback", s.wrapAuth(s.updateRollback))
+	mux.HandleFunc("/admin/updates/security", s.wrapAuth(s.updateSecurity))
+	mux.HandleFunc("/admin/updates/history", s.wrapAuth(s.updateHistory))
+	mux.HandleFunc("/admin/updates/rollouts/start", s.wrapAuth(s.rolloutStart))
+	mux.HandleFunc("/admin/updates/rollouts/get", s.wrapAuth(s.rolloutGet))
+	mux.HandleFunc("/admin/updates/rollouts/list", s.wrapAuth(s.rolloutList))
 
 	mux.HandleFunc("/agent/updates/health", s.wrapAuth(s.agentHealth))
 	mux.HandleFunc("/agent/updates/stage", s.wrapAuth(s.agentStage))
@@ -225,6 +233,7 @@ func (s *Server) updateStatus(w http.ResponseWriter, _ *http.Request) {
 		"explanation": "update device status list",
 		"data": map[string]any{
 			"devices": s.updater.Status(),
+			"poller":  pollerStatus(s.poller),
 		},
 	})
 }
@@ -346,6 +355,179 @@ func (s *Server) updateRollback(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) updateSecurity(w http.ResponseWriter, r *http.Request) {
+	if s.agent == nil {
+		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		return
+	}
+	health, err := s.agent.Health(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	attempts, _ := health["unknown_key_attempts"]
+	alerts, _ := health["unknown_key_alerts"]
+	if attempts == nil {
+		attempts = map[string]any{"manifest_unknown": map[string]int{}, "bundle_unknown": map[string]int{}}
+	}
+	if alerts == nil {
+		alerts = []any{}
+	}
+	history := []audit.Event{}
+	if s.auditStore != nil {
+		events, err := s.auditStore.List(r.Context(), audit.ListOptions{Category: "security", Limit: 50})
+		if err == nil {
+			history = events
+		}
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "update security telemetry snapshot",
+		"data": map[string]any{
+			"unknown_key_attempts": attempts,
+			"recent_alerts":        alerts,
+			"history":              history,
+		},
+	})
+}
+
+func (s *Server) updateHistory(w http.ResponseWriter, r *http.Request) {
+	if s.auditStore == nil {
+		http.Error(w, "audit store is not configured", http.StatusNotImplemented)
+		return
+	}
+	req, err := s.decodeToolRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	category, _ := readOptionalString(req.Input, "category")
+	limit, err := readOptionalInt(req.Input, "limit")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	events, err := s.auditStore.List(r.Context(), audit.ListOptions{Category: category, Limit: limit})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "historical update/security events",
+		"data": map[string]any{
+			"events": events,
+		},
+	})
+}
+
+func (s *Server) rolloutStart(w http.ResponseWriter, r *http.Request) {
+	if s.updater == nil {
+		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		return
+	}
+	req, err := s.decodeToolRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	manifest, deviceIDs, err := parseUpdateInput(req.Input)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	modeRaw, _ := readOptionalString(req.Input, "mode")
+	batchSize, err := readOptionalInt(req.Input, "batch_size")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	maxFailures, err := readOptionalInt(req.Input, "max_failures")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	pauseMs, err := readOptionalInt(req.Input, "pause_between_batches_ms")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	rollbackScope, _ := readOptionalString(req.Input, "rollback_scope")
+
+	rollout, err := s.updater.StartRollout(update.RolloutRequest{
+		Manifest:            manifest,
+		DeviceIDs:           deviceIDs,
+		Mode:                update.RolloutMode(strings.ToLower(strings.TrimSpace(modeRaw))),
+		BatchSize:           batchSize,
+		MaxFailures:         maxFailures,
+		PauseBetweenBatches: time.Duration(pauseMs) * time.Millisecond,
+		RollbackScope:       rollbackScope,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "rollout started",
+		"data":        rollout,
+	})
+	s.recordAuditEvent(r, audit.Event{
+		Category:  "rollout",
+		EventType: "rollout_started",
+		Severity:  "info",
+		Message:   "rollout started",
+		RolloutID: rollout.ID,
+		Payload: map[string]any{
+			"mode":          rollout.Mode,
+			"status":        rollout.Status,
+			"failure_count": rollout.FailureCount,
+		},
+	})
+}
+
+func (s *Server) rolloutGet(w http.ResponseWriter, r *http.Request) {
+	if s.updater == nil {
+		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		return
+	}
+	req, err := s.decodeToolRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	rolloutID, err := readRequiredString(req.Input, "rollout_id")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	rollout, ok := s.updater.GetRollout(rolloutID)
+	if !ok {
+		http.Error(w, "rollout not found", http.StatusNotFound)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "rollout details",
+		"data":        rollout,
+	})
+}
+
+func (s *Server) rolloutList(w http.ResponseWriter, _ *http.Request) {
+	if s.updater == nil {
+		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		return
+	}
+	rollouts := s.updater.ListRollouts()
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "rollout list",
+		"data": map[string]any{
+			"rollouts": rollouts,
+		},
+	})
+}
+
 func (s *Server) agentHealth(w http.ResponseWriter, r *http.Request) {
 	if s.agent == nil {
 		http.Error(w, "agent not configured", http.StatusNotImplemented)
@@ -462,6 +644,47 @@ func readDeviceIDs(values map[string]any) ([]string, error) {
 		ids = append(ids, s)
 	}
 	return ids, nil
+}
+
+func readOptionalInt(values map[string]any, key string) (int, error) {
+	raw, ok := values[key]
+	if !ok {
+		return 0, nil
+	}
+	switch v := raw.(type) {
+	case float64:
+		return int(v), nil
+	case int:
+		return v, nil
+	case json.Number:
+		i, err := strconv.Atoi(v.String())
+		if err != nil {
+			return 0, fmt.Errorf("%s must be numeric", key)
+		}
+		return i, nil
+	default:
+		return 0, fmt.Errorf("%s must be numeric", key)
+	}
+}
+
+func (s *Server) recordAuditEvent(r *http.Request, event audit.Event) {
+	if s.auditStore == nil {
+		return
+	}
+	if event.CreatedAt == "" {
+		event.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	_ = s.auditStore.Record(r.Context(), event)
+}
+
+func pollerStatus(poller *update.Poller) any {
+	if poller == nil {
+		return map[string]any{
+			"enabled": false,
+			"running": false,
+		}
+	}
+	return poller.Status()
 }
 
 func readRequiredString(values map[string]any, key string) (string, error) {
