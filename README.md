@@ -114,6 +114,9 @@ Runtime controls:
 - `runtime.stream_capture_timeout_seconds`
 
 Current implementation captures snapshots via `ffmpeg`, so `ffmpeg` must be installed on the device.
+Ingest workers include watchdog + auto-reconnect behavior, and `/admin/ingest/status` now returns recent incident events (`stream_failure`, `stream_stalled`, `stream_recovered`) for MCP-visible operations monitoring.
+
+Camera probing supports RTSP-first checks with ONVIF fallback probing (`camera.onvif_url`); ONVIF reachability is surfaced in `list_cameras` capability data.
 
 Staging/apply storage:
 
@@ -147,4 +150,10 @@ The generated manifest includes plaintext artifact `sha256`, `created_at`, and m
 ```bash
 go test ./...
 cd worker && python -m pytest
+```
+
+Replay gate harness (latency + accuracy for `check_package_at_door`):
+
+```bash
+go test ./tests -run TestReplayHarnessPackageDoorLatencyAndAccuracyGates -v
 ```

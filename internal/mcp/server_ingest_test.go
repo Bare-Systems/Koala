@@ -41,4 +41,7 @@ func TestIngestStatusEndpoint(t *testing.T) {
 	if _, ok := data["cameras"]; !ok {
 		t.Fatalf("missing cameras stats")
 	}
+	if _, ok := data["incidents"]; !ok {
+		t.Fatalf("missing incidents")
+	}
 }

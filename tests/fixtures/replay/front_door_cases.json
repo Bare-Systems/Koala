@@ -1,0 +1,7 @@
+[
+  {"name": "package_present_day", "frame_tag": "package_box_frontdoor", "expected_package": true},
+  {"name": "person_only", "frame_tag": "person_at_door", "expected_package": false},
+  {"name": "no_object", "frame_tag": "empty_porchtop", "expected_package": false},
+  {"name": "occlusion_package", "frame_tag": "package_partial_occlusion", "expected_package": true},
+  {"name": "night_low_light", "frame_tag": "night_package_frontdoor", "expected_package": true}
+]

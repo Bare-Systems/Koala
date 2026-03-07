@@ -35,6 +35,7 @@ cameras:
   - id: "cam_front_1"
     name: "Front Door Camera"
     rtsp_url: "rtsp://dvr.local:554/ch1"
+    onvif_url: "http://dvr.local/onvif/device_service"
     zone_id: "front_door"
     front_door: true
     probe_at_boot: true

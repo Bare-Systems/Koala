@@ -12,7 +12,7 @@ Build a local-first, privacy-preserving home security platform that gives AI age
 4. Progressive hardening: correctness first, then performance, then resilience.
 5. Every feature ships with tests and MCP contract checks.
 
-## Current State (as of March 5, 2026)
+## Current State (as of March 6, 2026)
 
 Implemented scaffold:
 - Go orchestrator with config loading, camera registry, RTSP probe, ingest queue, state aggregator, MCP HTTP tool routes, token auth, and degraded mode basics.
@@ -20,6 +20,10 @@ Implemented scaffold:
 - Initial proto contract for future gRPC boundary.
 - Docker Compose and container build setup.
 - Unit/integration tests for core Go modules and Python detector/model parsing.
+- Remote update foundation: signed/encrypted bundles, rotation-aware signature verification, rollout orchestration, polling mode, and SQLite-backed security/rollout history.
+- Streaming foundation: persistent ffmpeg ingest workers with reconnect policy, stall watchdog, MCP-visible ingest incident snapshots.
+- Discovery enhancements: ONVIF fallback probing and camera capability reporting.
+- Replay harness added for `check_package_at_door` latency and precision gate validation.
 
 Known gap:
 - Runtime Go<->Python transport is currently HTTP, not gRPC yet.

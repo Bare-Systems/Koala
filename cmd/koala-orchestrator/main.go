@@ -34,11 +34,25 @@ func main() {
 	prober := camera.Prober{Timeout: 2 * time.Second}
 	for _, c := range registry.List() {
 		if c.RTSPURL == "" {
-			registry.SetStatus(c.ID, camera.StatusUnavailable)
+			result := prober.Probe(context.Background(), c)
+			registry.SetCapability(c.ID, result.Capability)
+			registry.SetStatus(c.ID, result.Status)
+			if result.DiscoveredRTSPURL != "" {
+				registry.SetRTSPURL(c.ID, result.DiscoveredRTSPURL)
+				log.Printf("camera rtsp discovered camera=%s url=%s", c.ID, result.DiscoveredRTSPURL)
+			}
+			if result.Error != "" {
+				log.Printf("camera probe failed camera=%s err=%s", c.ID, result.Error)
+			}
 			continue
 		}
 		result := prober.Probe(context.Background(), c)
+		registry.SetCapability(c.ID, result.Capability)
 		registry.SetStatus(c.ID, result.Status)
+		if result.DiscoveredRTSPURL != "" {
+			registry.SetRTSPURL(c.ID, result.DiscoveredRTSPURL)
+			log.Printf("camera rtsp discovered camera=%s url=%s", c.ID, result.DiscoveredRTSPURL)
+		}
 		if result.Error != "" {
 			log.Printf("camera probe failed camera=%s err=%s", c.ID, result.Error)
 		}
@@ -182,6 +196,7 @@ func toCameras(cfg config.Config) []camera.Camera {
 			ID:        c.ID,
 			Name:      c.Name,
 			RTSPURL:   c.RTSPURL,
+			ONVIFURL:  c.ONVIFURL,
 			ZoneID:    c.ZoneID,
 			FrontDoor: c.FrontDoor,
 			Status:    camera.StatusUnknown,

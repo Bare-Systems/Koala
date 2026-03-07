@@ -7,16 +7,27 @@ type Status string
 const (
 	StatusUnknown     Status = "unknown"
 	StatusAvailable   Status = "available"
+	StatusDegraded    Status = "degraded"
 	StatusUnavailable Status = "unavailable"
 )
 
+type Capability struct {
+	RTSPReachable  bool   `json:"rtsp_reachable"`
+	ONVIFReachable bool   `json:"onvif_reachable"`
+	SelectedSource string `json:"selected_source,omitempty"`
+	LastProbedAt   string `json:"last_probed_at,omitempty"`
+	LastError      string `json:"last_error,omitempty"`
+}
+
 type Camera struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	RTSPURL   string `json:"rtsp_url,omitempty"`
-	ZoneID    string `json:"zone_id"`
-	FrontDoor bool   `json:"front_door"`
-	Status    Status `json:"status"`
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	RTSPURL    string     `json:"rtsp_url,omitempty"`
+	ONVIFURL   string     `json:"onvif_url,omitempty"`
+	ZoneID     string     `json:"zone_id"`
+	FrontDoor  bool       `json:"front_door"`
+	Status     Status     `json:"status"`
+	Capability Capability `json:"capability"`
 }
 
 type Registry struct {
@@ -53,6 +64,29 @@ func (r *Registry) List() []Camera {
 		out = append(out, camera)
 	}
 	return out
+}
+
+func (r *Registry) SetCapability(cameraID string, capability Capability) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	camera, ok := r.cameras[cameraID]
+	if !ok {
+		return
+	}
+	camera.Capability = capability
+	r.cameras[cameraID] = camera
+}
+
+func (r *Registry) SetRTSPURL(cameraID string, rtspURL string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	camera, ok := r.cameras[cameraID]
+	if !ok {
+		return
+	}
+	camera.RTSPURL = rtspURL
+	r.cameras[cameraID] = camera
 }
 
 func (r *Registry) FrontDoorCameraID() string {

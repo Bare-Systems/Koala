@@ -58,6 +58,7 @@ type CameraConfig struct {
 	ID          string `yaml:"id"`
 	Name        string `yaml:"name"`
 	RTSPURL     string `yaml:"rtsp_url"`
+	ONVIFURL    string `yaml:"onvif_url"`
 	ZoneID      string `yaml:"zone_id"`
 	FrontDoor   bool   `yaml:"front_door"`
 	ProbeAtBoot bool   `yaml:"probe_at_boot"`

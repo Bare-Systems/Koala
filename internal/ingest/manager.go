@@ -19,22 +19,33 @@ type Snapshotter interface {
 }
 
 type CameraStats struct {
-	CameraID      string        `json:"camera_id"`
-	Attempts      int64         `json:"attempts"`
-	Successes     int64         `json:"successes"`
-	Failures      int64         `json:"failures"`
-	Submitted     int64         `json:"submitted"`
-	Dropped       int64         `json:"dropped"`
-	LastError     string        `json:"last_error,omitempty"`
-	LastCaptureAt string        `json:"last_capture_at,omitempty"`
-	LastStatus    camera.Status `json:"last_status"`
+	CameraID            string        `json:"camera_id"`
+	Attempts            int64         `json:"attempts"`
+	Successes           int64         `json:"successes"`
+	Failures            int64         `json:"failures"`
+	Submitted           int64         `json:"submitted"`
+	Dropped             int64         `json:"dropped"`
+	ConsecutiveFailures int64         `json:"consecutive_failures"`
+	LastError           string        `json:"last_error,omitempty"`
+	LastCaptureAt       string        `json:"last_capture_at,omitempty"`
+	LastStatus          camera.Status `json:"last_status"`
+}
+
+type Incident struct {
+	CameraID   string `json:"camera_id"`
+	Type       string `json:"type"`
+	Severity   string `json:"severity"`
+	Message    string `json:"message"`
+	OccurredAt string `json:"occurred_at"`
 }
 
 type Status struct {
 	StartedAt        string                 `json:"started_at"`
 	SampleEveryMs    int64                  `json:"sample_every_ms"`
 	CaptureTimeoutMs int64                  `json:"capture_timeout_ms"`
+	StallTimeoutMs   int64                  `json:"stall_timeout_ms"`
 	Cameras          map[string]CameraStats `json:"cameras"`
+	Incidents        []Incident             `json:"incidents"`
 }
 
 type Manager struct {
@@ -46,7 +57,12 @@ type Manager struct {
 
 	statsMu   sync.Mutex
 	stats     map[string]CameraStats
+	incidents []Incident
+	stalled   map[string]bool
 	startedAt time.Time
+
+	stallTimeout    time.Duration
+	maxIncidentSize int
 }
 
 func NewManager(registry *camera.Registry, submitter Submitter, snapshotter Snapshotter, sampleEvery time.Duration, captureTimeout time.Duration) *Manager {
@@ -61,13 +77,16 @@ func NewManager(registry *camera.Registry, submitter Submitter, snapshotter Snap
 		stats[c.ID] = CameraStats{CameraID: c.ID, LastStatus: c.Status}
 	}
 	return &Manager{
-		registry:       registry,
-		submitter:      submitter,
-		snapshotter:    snapshotter,
-		sampleEvery:    sampleEvery,
-		captureTimeout: captureTimeout,
-		stats:          stats,
-		startedAt:      time.Now().UTC(),
+		registry:        registry,
+		submitter:       submitter,
+		snapshotter:     snapshotter,
+		sampleEvery:     sampleEvery,
+		captureTimeout:  captureTimeout,
+		stats:           stats,
+		stalled:         map[string]bool{},
+		startedAt:       time.Now().UTC(),
+		stallTimeout:    maxDuration(10*time.Second, sampleEvery*3),
+		maxIncidentSize: 200,
 	}
 }
 
@@ -85,6 +104,7 @@ func (m *Manager) Start(ctx context.Context) {
 			m.runCamera(ctx, cameraInfo)
 		}()
 	}
+	go m.watchdog(ctx)
 	go func() {
 		<-ctx.Done()
 		wg.Wait()
@@ -105,7 +125,9 @@ func (m *Manager) Status() Status {
 		StartedAt:        m.startedAt.Format(time.RFC3339),
 		SampleEveryMs:    m.sampleEvery.Milliseconds(),
 		CaptureTimeoutMs: m.captureTimeout.Milliseconds(),
+		StallTimeoutMs:   m.stallTimeout.Milliseconds(),
 		Cameras:          out,
+		Incidents:        append([]Incident{}, m.incidents...),
 	}
 }
 
@@ -123,25 +145,27 @@ func (m *Manager) runCamera(ctx context.Context, cam camera.Camera) {
 			frame, err := m.snapshotter.Capture(captureCtx, cam.RTSPURL)
 			cancel()
 			if err != nil {
-				m.registry.SetStatus(cam.ID, camera.StatusUnavailable)
-				m.increment(cam.ID, func(s *CameraStats) {
-					s.Failures++
-					s.LastError = err.Error()
-					s.LastStatus = camera.StatusUnavailable
-				})
+				m.markFailure(cam.ID, err)
 				continue
 			}
 
 			m.registry.SetStatus(cam.ID, camera.StatusAvailable)
+			now := time.Now().UTC()
 			accepted := m.submitter.Submit(service.FrameTask{
 				CameraID: cam.ID,
 				ZoneID:   cam.ZoneID,
 				FrameB64: base64.StdEncoding.EncodeToString(frame),
-				Captured: time.Now().UTC(),
+				Captured: now,
 			})
+			recovered := false
 			m.increment(cam.ID, func(s *CameraStats) {
+				if s.ConsecutiveFailures > 0 {
+					recovered = true
+				}
 				s.Successes++
-				s.LastCaptureAt = time.Now().UTC().Format(time.RFC3339)
+				s.ConsecutiveFailures = 0
+				s.LastError = ""
+				s.LastCaptureAt = now.Format(time.RFC3339)
 				s.LastStatus = camera.StatusAvailable
 				if accepted {
 					s.Submitted++
@@ -149,6 +173,7 @@ func (m *Manager) runCamera(ctx context.Context, cam camera.Camera) {
 					s.Dropped++
 				}
 			})
+			m.onRecovery(cam.ID, recovered)
 		}
 	}
 }
@@ -162,4 +187,112 @@ func (m *Manager) increment(cameraID string, mutator func(*CameraStats)) {
 	}
 	mutator(&stats)
 	m.stats[cameraID] = stats
+}
+
+func (m *Manager) markFailure(cameraID string, err error) {
+	m.registry.SetStatus(cameraID, camera.StatusUnavailable)
+	m.statsMu.Lock()
+	stats, ok := m.stats[cameraID]
+	if !ok {
+		stats = CameraStats{CameraID: cameraID}
+	}
+	stats.Failures++
+	stats.ConsecutiveFailures++
+	stats.LastStatus = camera.StatusUnavailable
+	if err != nil {
+		stats.LastError = err.Error()
+	}
+	m.stats[cameraID] = stats
+	if stats.ConsecutiveFailures == 1 || stats.ConsecutiveFailures%5 == 0 {
+		m.recordIncidentLocked(Incident{
+			CameraID:   cameraID,
+			Type:       "stream_failure",
+			Severity:   "high",
+			Message:    stats.LastError,
+			OccurredAt: time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+	m.statsMu.Unlock()
+}
+
+func (m *Manager) onRecovery(cameraID string, recoveredFromFailure bool) {
+	m.statsMu.Lock()
+	defer m.statsMu.Unlock()
+	_, ok := m.stats[cameraID]
+	if !ok {
+		return
+	}
+	wasStalled := m.stalled[cameraID]
+	if recoveredFromFailure || wasStalled {
+		m.recordIncidentLocked(Incident{
+			CameraID:   cameraID,
+			Type:       "stream_recovered",
+			Severity:   "info",
+			Message:    "camera stream recovered",
+			OccurredAt: time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+	if wasStalled {
+		delete(m.stalled, cameraID)
+	}
+}
+
+func (m *Manager) watchdog(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.checkStalls()
+		}
+	}
+}
+
+func (m *Manager) checkStalls() {
+	m.statsMu.Lock()
+	defer m.statsMu.Unlock()
+	now := time.Now().UTC()
+	for cameraID, stats := range m.stats {
+		if stats.LastCaptureAt == "" {
+			continue
+		}
+		parsed, err := time.Parse(time.RFC3339, stats.LastCaptureAt)
+		if err != nil {
+			continue
+		}
+		if now.Sub(parsed) <= m.stallTimeout {
+			continue
+		}
+		if m.stalled[cameraID] {
+			continue
+		}
+		m.stalled[cameraID] = true
+		stats.LastStatus = camera.StatusDegraded
+		stats.LastError = "stream stalled"
+		m.stats[cameraID] = stats
+		m.registry.SetStatus(cameraID, camera.StatusDegraded)
+		m.recordIncidentLocked(Incident{
+			CameraID:   cameraID,
+			Type:       "stream_stalled",
+			Severity:   "medium",
+			Message:    "no frames received within watchdog threshold",
+			OccurredAt: now.Format(time.RFC3339),
+		})
+	}
+}
+
+func (m *Manager) recordIncidentLocked(incident Incident) {
+	m.incidents = append(m.incidents, incident)
+	if len(m.incidents) > m.maxIncidentSize {
+		m.incidents = m.incidents[len(m.incidents)-m.maxIncidentSize:]
+	}
+}
+
+func maxDuration(a time.Duration, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
 }

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"hash/fnv"
 	"io"
+	"math/rand"
 	"os/exec"
 	"sync"
 	"time"
@@ -146,6 +148,9 @@ func (w *ffmpegWorker) LatestFrame(ctx context.Context) ([]byte, error) {
 
 func (w *ffmpegWorker) loop() {
 	defer close(w.stopped)
+	backoff := 500 * time.Millisecond
+	maxBackoff := 15 * time.Second
+	rng := rand.New(rand.NewSource(time.Now().UnixNano() + int64(seedFromURL(w.rtspURL))))
 	for {
 		select {
 		case <-w.stop:
@@ -156,12 +161,23 @@ func (w *ffmpegWorker) loop() {
 		err := w.runOnce()
 		if err != nil {
 			w.setError(err)
+			jitter := time.Duration(rng.Int63n(int64(backoff / 2)))
+			sleep := backoff + jitter
+			if sleep > maxBackoff {
+				sleep = maxBackoff
+			}
+			select {
+			case <-w.stop:
+				return
+			case <-time.After(sleep):
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			continue
 		}
-		select {
-		case <-w.stop:
-			return
-		case <-time.After(1500 * time.Millisecond):
-		}
+		backoff = 500 * time.Millisecond
 	}
 }
 
@@ -257,6 +273,12 @@ func (w *ffmpegWorker) setFrame(frame []byte) {
 	case w.notify <- struct{}{}:
 	default:
 	}
+}
+
+func seedFromURL(raw string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(raw))
+	return h.Sum32()
 }
 
 func (w *ffmpegWorker) setError(err error) {
