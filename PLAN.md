@@ -259,6 +259,7 @@ Known gap:
 - [ ] Publish tool specs with examples and failure semantics.
 - [ ] Enforce strict JSON output contracts (no accidental free-form response paths).
 - [ ] Add freshness semantics and stale-data explanation consistency.
+- [ ] Add action risk classification hooks in tool payloads for BearClaw policy enforcement.
 
 #### 5.2 Agent Prompt/Tool Harness
 - [ ] Build harness that simulates prompt-driven tool selection.
