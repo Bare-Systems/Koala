@@ -9,7 +9,54 @@ import (
 	"github.com/barelabs/koala/internal/camera"
 	"github.com/barelabs/koala/internal/inference"
 	"github.com/barelabs/koala/internal/state"
+	"github.com/barelabs/koala/internal/telemetry"
+	"github.com/barelabs/koala/internal/zone"
 )
+
+const defaultMinBBoxOverlap = 0.3
+
+// ZonePolygonConfig carries the polygon filter settings for one zone.
+type ZonePolygonConfig struct {
+	Polygon    zone.Polygon
+	MinOverlap float64 // 0 → defaultMinBBoxOverlap
+}
+
+// ZoneFilter holds per-zone polygon configs and filters raw detections.
+// Zones without a polygon config pass all detections through.
+type ZoneFilter struct {
+	zones map[string]ZonePolygonConfig
+}
+
+// NewZoneFilter builds a ZoneFilter from a map of zone ID → polygon config.
+// Pass nil to get a no-op filter.
+func NewZoneFilter(zones map[string]ZonePolygonConfig) *ZoneFilter {
+	if zones == nil {
+		zones = map[string]ZonePolygonConfig{}
+	}
+	return &ZoneFilter{zones: zones}
+}
+
+func (f *ZoneFilter) Filter(detections []inference.Detection) []inference.Detection {
+	if f == nil || len(f.zones) == 0 {
+		return detections
+	}
+	out := detections[:0:0] // zero-length slice backed by same array
+	for _, d := range detections {
+		cfg, ok := f.zones[d.ZoneID]
+		if !ok || len(cfg.Polygon) == 0 {
+			out = append(out, d)
+			continue
+		}
+		minOverlap := cfg.MinOverlap
+		if minOverlap == 0 {
+			minOverlap = defaultMinBBoxOverlap
+		}
+		if zone.InZone(cfg.Polygon, d.BBox, minOverlap) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
 
 type FrameTask struct {
 	CameraID string
@@ -30,8 +77,11 @@ type Service struct {
 	Registry   *camera.Registry
 	Aggregator *state.Aggregator
 	Inference  inference.Client
+	Filter     *ZoneFilter
+	Metrics    *telemetry.Collector
 
 	queue       chan FrameTask
+	queueCap    int
 	start       time.Time
 	dropped     atomic.Int64
 	degraded    atomic.Bool
@@ -46,10 +96,19 @@ func New(registry *camera.Registry, aggregator *state.Aggregator, client inferen
 		Registry:   registry,
 		Aggregator: aggregator,
 		Inference:  client,
+		Filter:     NewZoneFilter(nil),
+		Metrics:    telemetry.New(0),
 		queue:      make(chan FrameTask, queueSize),
+		queueCap:   queueSize,
 		start:      time.Now().UTC(),
 	}
 }
+
+// QueueDepth returns the current number of frames waiting to be processed.
+func (s *Service) QueueDepth() int { return len(s.queue) }
+
+// QueueCapacity returns the maximum capacity of the ingest queue.
+func (s *Service) QueueCapacity() int { return s.queueCap }
 
 func (s *Service) Submit(task FrameTask) bool {
 	select {
@@ -57,6 +116,7 @@ func (s *Service) Submit(task FrameTask) bool {
 		return true
 	default:
 		s.dropped.Add(1)
+		s.Metrics.FrameDropped.Add(1)
 		return false
 	}
 }
@@ -75,25 +135,30 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 func (s *Service) processTask(ctx context.Context, task FrameTask) {
+	start := time.Now()
 	resp, err := s.Inference.AnalyzeFrame(ctx, inference.FrameRequest{
 		CameraID: task.CameraID,
 		ZoneID:   task.ZoneID,
 		FrameB64: task.FrameB64,
 		Captured: task.Captured,
 	})
+	s.Metrics.RecordInferenceLatency(time.Since(start))
+	s.Metrics.FrameTotal.Add(1)
 	if err != nil {
 		s.markDegraded(err)
 		return
 	}
 
-	normalized := make([]state.Detection, 0, len(resp.Detections))
-	for _, d := range resp.Detections {
+	filtered := s.Filter.Filter(resp.Detections)
+	normalized := make([]state.Detection, 0, len(filtered))
+	for _, d := range filtered {
 		normalized = append(normalized, state.Detection{
 			CameraID:   d.CameraID,
 			ZoneID:     d.ZoneID,
 			Label:      d.Label,
 			Confidence: d.Confidence,
 			ObservedAt: d.Timestamp,
+			BBox:       d.BBox,
 		})
 	}
 	s.Aggregator.Ingest(normalized)

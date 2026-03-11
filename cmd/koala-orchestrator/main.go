@@ -19,6 +19,7 @@ import (
 	"github.com/barelabs/koala/internal/service"
 	"github.com/barelabs/koala/internal/state"
 	"github.com/barelabs/koala/internal/update"
+	"github.com/barelabs/koala/internal/zone"
 )
 
 func main() {
@@ -61,6 +62,7 @@ func main() {
 	aggregator := state.NewAggregator(time.Duration(cfg.Runtime.FreshnessWindow) * time.Second)
 	client := inference.NewHTTPClient(cfg.Worker.URL)
 	svc := service.New(registry, aggregator, client, cfg.Runtime.QueueSize)
+	svc.Filter = service.NewZoneFilter(toZoneFilters(cfg))
 	auditStore, err := audit.NewSQLiteStore(cfg.Update.AuditDBPath)
 	if err != nil {
 		log.Fatalf("init audit sqlite: %v", err)
@@ -187,6 +189,24 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("shutdown error: %v", err)
 	}
+}
+
+func toZoneFilters(cfg config.Config) map[string]service.ZonePolygonConfig {
+	out := make(map[string]service.ZonePolygonConfig, len(cfg.Zones))
+	for _, z := range cfg.Zones {
+		if len(z.Polygon) < 3 {
+			continue
+		}
+		poly := make(zone.Polygon, len(z.Polygon))
+		for i, pt := range z.Polygon {
+			poly[i] = zone.Point{X: pt[0], Y: pt[1]}
+		}
+		out[z.ID] = service.ZonePolygonConfig{
+			Polygon:    poly,
+			MinOverlap: z.MinBBoxOverlap,
+		}
+	}
+	return out
 }
 
 func toCameras(cfg config.Config) []camera.Camera {

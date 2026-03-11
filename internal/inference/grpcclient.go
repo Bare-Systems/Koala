@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
+	"github.com/barelabs/koala/internal/zone"
 	pb "github.com/barelabs/koala/proto/inferencev1"
 )
 
@@ -106,13 +107,22 @@ func (c *GRPCClient) AnalyzeFrame(ctx context.Context, req FrameRequest) (FrameR
 		Detections:   make([]Detection, 0, len(pbResp.GetDetections())),
 	}
 	for _, d := range pbResp.GetDetections() {
-		resp.Detections = append(resp.Detections, Detection{
+		det := Detection{
 			CameraID:   d.GetCameraId(),
 			ZoneID:     d.GetZoneId(),
 			Label:      d.GetLabel(),
 			Confidence: float64(d.GetConfidence()),
 			Timestamp:  time.UnixMilli(d.GetTimestampUnixMs()).UTC(),
-		})
+		}
+		if b := d.GetBbox(); b != nil {
+			det.BBox = zone.BBox{
+				X: float64(b.GetX()),
+				Y: float64(b.GetY()),
+				W: float64(b.GetWidth()),
+				H: float64(b.GetHeight()),
+			}
+		}
+		resp.Detections = append(resp.Detections, det)
 	}
 	return resp, nil
 }

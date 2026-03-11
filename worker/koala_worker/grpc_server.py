@@ -29,11 +29,13 @@ GRPC_PORT = int(os.environ.get("KOALA_GRPC_PORT", "50051"))
 
 
 def _detection_to_pb(d: Detection, timestamp_ms: int) -> pb.Detection:
+    bbox = pb.BBox(x=d.bbox.x, y=d.bbox.y, width=d.bbox.w, height=d.bbox.h)
     return pb.Detection(
         camera_id=d.camera_id,
         zone_id=d.zone_id,
         label=d.label,
         confidence=float(d.confidence),
+        bbox=bbox,
         timestamp_unix_ms=timestamp_ms,
     )
 

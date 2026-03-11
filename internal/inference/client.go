@@ -3,6 +3,8 @@ package inference
 import (
 	"context"
 	"time"
+
+	"github.com/barelabs/koala/internal/zone"
 )
 
 type Detection struct {
@@ -11,6 +13,7 @@ type Detection struct {
 	Label      string    `json:"label"`
 	Confidence float64   `json:"confidence"`
 	Timestamp  time.Time `json:"timestamp"`
+	BBox       zone.BBox `json:"bbox,omitempty"`
 }
 
 type FrameRequest struct {

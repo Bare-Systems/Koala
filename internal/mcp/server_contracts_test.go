@@ -191,8 +191,8 @@ func TestContract_GetZoneState_Schema(t *testing.T) {
 		t.Fatalf("expected 200, got %d", res.Code)
 	}
 	tr := assertToolResponse(t, res)
-	if tr.Status != "ok" && tr.Status != "degraded" {
-		t.Fatalf("status must be ok or degraded, got %q", tr.Status)
+	if tr.Status != "ok" && tr.Status != "degraded" && tr.Status != "stale" {
+		t.Fatalf("status must be ok, degraded, or stale, got %q", tr.Status)
 	}
 	data, ok := tr.Data.(map[string]any)
 	if !ok {

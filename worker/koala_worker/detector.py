@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import timezone
 from typing import Any
 
-from .models import AnalyzeRequest, Detection
+from .models import AnalyzeRequest, BBox, Detection
 
 # Maps raw model output class names to canonical Koala labels.
 # Handles COCO / custom-model name variations so the rest of the pipeline
@@ -63,6 +63,7 @@ class YoloDetector:
 
     def _heuristic(self, req: AnalyzeRequest) -> list[Detection]:
         # Frame payload hints let replay fixtures drive deterministic tests without GPU runtime.
+        # BBox defaults to full frame (0, 0, 1, 1) since heuristic has no real geometry.
         raw = (req.frame_b64 or "").lower()
         detections: list[Detection] = []
         ts = req.captured_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -70,11 +71,13 @@ class YoloDetector:
             detections.append(Detection(
                 camera_id=req.camera_id, zone_id=req.zone_id,
                 label="package", confidence=0.91, timestamp=ts,
+                bbox=BBox(x=0.0, y=0.0, w=1.0, h=1.0),
             ))
         if "person" in raw:
             detections.append(Detection(
                 camera_id=req.camera_id, zone_id=req.zone_id,
                 label="person", confidence=0.88, timestamp=ts,
+                bbox=BBox(x=0.0, y=0.0, w=1.0, h=1.0),
             ))
         return self._apply_thresholds(detections, req.camera_id)
 
@@ -89,9 +92,17 @@ class YoloDetector:
                 canonical = LABEL_MAP.get(raw_label)
                 if canonical is None:
                     continue
+                # box.xywhn gives normalized [x_center, y_center, w, h].
+                # Convert to top-left origin: x = cx - w/2, y = cy - h/2.
+                try:
+                    cx, cy, bw, bh = (float(v) for v in box.xywhn[0])
+                    bbox = BBox(x=cx - bw / 2, y=cy - bh / 2, w=bw, h=bh)
+                except Exception:
+                    bbox = BBox()
                 detections.append(Detection(
                     camera_id=req.camera_id, zone_id=req.zone_id,
-                    label=canonical, confidence=float(box.conf[0]), timestamp=ts,
+                    label=canonical, confidence=float(box.conf[0]),
+                    timestamp=ts, bbox=bbox,
                 ))
         return self._apply_thresholds(detections, req.camera_id)
 

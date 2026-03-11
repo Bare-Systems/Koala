@@ -4,6 +4,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/barelabs/koala/internal/zone"
 )
 
 type Detection struct {
@@ -12,6 +14,7 @@ type Detection struct {
 	Label      string    `json:"label"`
 	Confidence float64   `json:"confidence"`
 	ObservedAt time.Time `json:"observed_at"`
+	BBox       zone.BBox `json:"bbox,omitempty"`
 }
 
 type EntityState struct {
@@ -26,6 +29,9 @@ type ZoneState struct {
 	ObservedAt   time.Time     `json:"observed_at"`
 	Entities     []EntityState `json:"entities"`
 	FreshnessSec int64         `json:"freshness_seconds"`
+	// Stale is true when no detections have been ingested for this zone,
+	// or when all detections in the window have expired.
+	Stale bool `json:"stale"`
 }
 
 type Aggregator struct {
@@ -134,5 +140,6 @@ func (a *Aggregator) Zone(zoneID string) ZoneState {
 		ObservedAt:   observedAt,
 		Entities:     entities,
 		FreshnessSec: freshness,
+		Stale:        observedAt.IsZero(),
 	}
 }

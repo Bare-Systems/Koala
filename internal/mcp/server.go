@@ -1,9 +1,12 @@
 package mcp
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -36,6 +39,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/mcp/tools/koala.get_zone_state", s.wrapAuth(s.getZoneState))
 	mux.HandleFunc("/mcp/tools/koala.check_package_at_door", s.wrapAuth(s.checkPackageAtDoor))
 	mux.HandleFunc("/ingest/frame", s.wrapAuth(s.ingestFrame))
+	mux.HandleFunc("/metrics", s.wrapAuth(s.getMetrics))
+	mux.HandleFunc("/healthz", s.healthz)
+	mux.HandleFunc("/readyz", s.readyz)
 
 	mux.HandleFunc("/admin/updates/status", s.wrapAuth(s.updateStatus))
 	mux.HandleFunc("/admin/updates/check", s.wrapAuth(s.updateCheck))
@@ -67,6 +73,17 @@ func (s *Server) wrapAuth(next http.HandlerFunc) http.HandlerFunc {
 		if !strings.HasPrefix(auth, "Bearer ") || strings.TrimPrefix(auth, "Bearer ") != s.token {
 			s.writeToolError(w, http.StatusUnauthorized, ErrCodeUnauthorized, "missing or invalid bearer token", "provide a valid Authorization: Bearer <token> header")
 			return
+		}
+
+		// Assign a request ID for log correlation.
+		reqID := r.Header.Get("X-Request-ID")
+		if reqID == "" {
+			reqID = newRequestID()
+		}
+		w.Header().Set("X-Request-ID", reqID)
+		log.Printf("service=mcp request_id=%s method=%s path=%s", reqID, r.Method, r.URL.Path)
+		if s.service != nil {
+			s.service.Metrics.ToolRequestTotal.Add(1)
 		}
 
 		next(w, r)
@@ -146,23 +163,36 @@ func (s *Server) getZoneState(w http.ResponseWriter, r *http.Request) {
 		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "provide zone_id in the input object")
 		return
 	}
-	zone := s.service.ZoneState(zoneID)
+	zoneState := s.service.ZoneState(zoneID)
 	status := "ok"
 	explanation := "zone state available"
-	if s.service.IsDegraded() {
+	nextAction := ""
+	switch {
+	case s.service.IsDegraded():
 		status = "degraded"
 		explanation = "inference unavailable; returning last-known zone state"
+		nextAction = "call koala.get_system_health for details"
+	case zoneState.Stale:
+		status = "stale"
+		explanation = fmt.Sprintf("no recent observations for zone %q; ensure camera is active and streaming", zoneID)
+		nextAction = "call koala.get_system_health to check camera and inference status"
 	}
-	s.writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"status":            status,
-		"freshness_seconds": zone.FreshnessSec,
+		"freshness_seconds": zoneState.FreshnessSec,
 		"explanation":       explanation,
+		"risk_level":        RiskLow,
 		"data": map[string]any{
-			"zone_id":     zone.ZoneID,
-			"observed_at": zone.ObservedAt.UTC().Format(time.RFC3339),
-			"entities":    zone.Entities,
+			"zone_id":     zoneState.ZoneID,
+			"observed_at": zoneState.ObservedAt.UTC().Format(time.RFC3339),
+			"stale":       zoneState.Stale,
+			"entities":    zoneState.Entities,
 		},
-	})
+	}
+	if nextAction != "" {
+		resp["next_action"] = nextAction
+	}
+	s.writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) checkPackageAtDoor(w http.ResponseWriter, r *http.Request) {
@@ -177,26 +207,40 @@ func (s *Server) checkPackageAtDoor(w http.ResponseWriter, r *http.Request) {
 		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "provide a valid camera_id or omit to use the default front door camera")
 		return
 	}
+	stale := observedAt.IsZero()
 	status := "ok"
 	explanation := "front door package state computed"
-	if s.service.IsDegraded() {
+	nextAction := ""
+	switch {
+	case s.service.IsDegraded():
 		status = "degraded"
 		explanation = "inference unavailable; returning last-known package state"
+		nextAction = "call koala.get_system_health for details"
+	case stale:
+		status = "stale"
+		explanation = "no observations yet for the front door camera; state is unknown"
+		nextAction = "ensure the front door camera is online and check koala.get_system_health"
 	}
 	freshness := int64(0)
 	if !observedAt.IsZero() {
 		freshness = int64(time.Since(observedAt).Seconds())
 	}
-	s.writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"status":            status,
 		"freshness_seconds": freshness,
 		"explanation":       explanation,
+		"risk_level":        RiskLow,
 		"data": map[string]any{
 			"package_present": present,
 			"confidence":      confidence,
 			"observed_at":     observedAt.UTC().Format(time.RFC3339),
+			"stale":           stale,
 		},
-	})
+	}
+	if nextAction != "" {
+		resp["next_action"] = nextAction
+	}
+	s.writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) ingestFrame(w http.ResponseWriter, r *http.Request) {
@@ -625,6 +669,50 @@ func (s *Server) agentRollback(w http.ResponseWriter, r *http.Request) {
 		"status":      "ok",
 		"explanation": "agent rolled back update",
 	})
+}
+
+// ─── Observability endpoints ──────────────────────────────────────────────────
+
+func (s *Server) getMetrics(w http.ResponseWriter, _ *http.Request) {
+	snap := s.service.Metrics.Snapshot()
+	snap["ingest_queue_depth"] = s.service.QueueDepth()
+	snap["ingest_queue_capacity"] = s.service.QueueCapacity()
+	snap["camera_count"] = len(s.service.Registry.List())
+	availableCount := 0
+	for _, cam := range s.service.Registry.List() {
+		if cam.Status == "available" {
+			availableCount++
+		}
+	}
+	snap["camera_available_count"] = availableCount
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "runtime metrics snapshot",
+		"data":        snap,
+	})
+}
+
+func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+func (s *Server) readyz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.service != nil && s.service.IsDegraded() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"not_ready","reason":"inference_degraded"}`))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ready"}`))
+}
+
+func newRequestID() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 func parseUpdateInput(input map[string]any) (update.Manifest, []string, error) {

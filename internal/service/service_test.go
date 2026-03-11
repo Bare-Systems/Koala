@@ -9,6 +9,7 @@ import (
 	"github.com/barelabs/koala/internal/camera"
 	"github.com/barelabs/koala/internal/inference"
 	"github.com/barelabs/koala/internal/state"
+	"github.com/barelabs/koala/internal/zone"
 )
 
 type staticInferenceClient struct {
@@ -44,6 +45,42 @@ func TestServiceQueueBackpressure(t *testing.T) {
 	}
 	if svc.Submit(FrameTask{CameraID: "cam1", ZoneID: "front_door", Captured: time.Now().UTC()}) {
 		t.Fatalf("second submit should be dropped when queue is full")
+	}
+}
+
+func TestZoneFilterPassesWhenNoPoly(t *testing.T) {
+	f := NewZoneFilter(nil)
+	dets := []inference.Detection{{ZoneID: "z1", Label: "package", BBox: zone.BBox{X: 0, Y: 0, W: 1, H: 1}}}
+	got := f.Filter(dets)
+	if len(got) != 1 {
+		t.Fatalf("no-poly filter should pass all detections")
+	}
+}
+
+func TestZoneFilterRejectsOutOfZone(t *testing.T) {
+	// Zone covers only bottom-right quarter.
+	poly := zone.Polygon{{0.5, 0.5}, {1, 0.5}, {1, 1}, {0.5, 1}}
+	f := NewZoneFilter(map[string]ZonePolygonConfig{
+		"z1": {Polygon: poly, MinOverlap: 0.5},
+	})
+	// BBox is entirely in top-left → no overlap.
+	dets := []inference.Detection{{ZoneID: "z1", Label: "package", BBox: zone.BBox{X: 0, Y: 0, W: 0.3, H: 0.3}}}
+	got := f.Filter(dets)
+	if len(got) != 0 {
+		t.Fatalf("out-of-zone detection should be filtered")
+	}
+}
+
+func TestZoneFilterAcceptsInZone(t *testing.T) {
+	// Zone covers full frame.
+	poly := zone.Polygon{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+	f := NewZoneFilter(map[string]ZonePolygonConfig{
+		"z1": {Polygon: poly, MinOverlap: 0.5},
+	})
+	dets := []inference.Detection{{ZoneID: "z1", Label: "package", BBox: zone.BBox{X: 0.1, Y: 0.1, W: 0.5, H: 0.5}}}
+	got := f.Filter(dets)
+	if len(got) != 1 {
+		t.Fatalf("in-zone detection should pass")
 	}
 }
 

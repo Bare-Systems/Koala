@@ -68,9 +68,13 @@ type CameraConfig struct {
 }
 
 type ZoneConfig struct {
-	ID                  string  `yaml:"id"`
-	Name                string  `yaml:"name"`
-	ConfidenceThreshold float64 `yaml:"confidence_threshold"` // overrides global default for all cameras in zone; 0 = use global
+	ID                  string      `yaml:"id"`
+	Name                string      `yaml:"name"`
+	ConfidenceThreshold float64     `yaml:"confidence_threshold"` // overrides global default for all cameras in zone; 0 = use global
+	// Polygon defines the region of interest in normalized (0–1) frame coordinates.
+	// Each element is [x, y]. If empty, no polygon filtering is applied.
+	Polygon        [][]float64 `yaml:"polygon"`
+	MinBBoxOverlap float64     `yaml:"min_bbox_overlap"` // minimum bbox overlap fraction; 0 uses default of 0.3
 }
 
 func Load(path string) (Config, error) {
@@ -162,6 +166,17 @@ func (c Config) Validate() error {
 		zoneIDs[z.ID] = struct{}{}
 		if z.ConfidenceThreshold < 0 || z.ConfidenceThreshold > 1 {
 			return fmt.Errorf("zone %q: confidence_threshold must be between 0 and 1", z.ID)
+		}
+		if len(z.Polygon) > 0 && len(z.Polygon) < 3 {
+			return fmt.Errorf("zone %q: polygon must have at least 3 vertices or be empty", z.ID)
+		}
+		for i, pt := range z.Polygon {
+			if len(pt) != 2 {
+				return fmt.Errorf("zone %q: polygon[%d] must be [x, y]", z.ID, i)
+			}
+		}
+		if z.MinBBoxOverlap < 0 || z.MinBBoxOverlap > 1 {
+			return fmt.Errorf("zone %q: min_bbox_overlap must be between 0 and 1", z.ID)
 		}
 	}
 

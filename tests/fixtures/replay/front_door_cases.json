@@ -1,7 +1,12 @@
 [
-  {"name": "package_present_day", "frame_tag": "package_box_frontdoor", "expected_package": true},
-  {"name": "person_only", "frame_tag": "person_at_door", "expected_package": false},
-  {"name": "no_object", "frame_tag": "empty_porchtop", "expected_package": false},
-  {"name": "occlusion_package", "frame_tag": "package_partial_occlusion", "expected_package": true},
-  {"name": "night_low_light", "frame_tag": "night_package_frontdoor", "expected_package": true}
+  {"name": "package_present_day",    "frame_tag": "package_box_frontdoor",     "expected_package": true,  "expected_person": false},
+  {"name": "person_only",            "frame_tag": "person_at_door",            "expected_package": false, "expected_person": true},
+  {"name": "no_object",              "frame_tag": "empty_porchtop",            "expected_package": false, "expected_person": false},
+  {"name": "occlusion_package",      "frame_tag": "package_partial_occlusion", "expected_package": true,  "expected_person": false},
+  {"name": "night_low_light",        "frame_tag": "night_package_frontdoor",   "expected_package": true,  "expected_person": false},
+  {"name": "package_and_person",     "frame_tag": "package_person_together",   "expected_package": true,  "expected_person": true},
+  {"name": "large_package_doorstep", "frame_tag": "package_big_box_doorstep",  "expected_package": true,  "expected_person": false},
+  {"name": "person_no_package",      "frame_tag": "person_standing_doorway",   "expected_package": false, "expected_person": true},
+  {"name": "empty_driveway",         "frame_tag": "empty_driveway_day",        "expected_package": false, "expected_person": false},
+  {"name": "multiple_packages",      "frame_tag": "package_multiple_on_porch", "expected_package": true,  "expected_person": false}
 ]

@@ -24,6 +24,45 @@ type replayCase struct {
 	Name            string `json:"name"`
 	FrameTag        string `json:"frame_tag"`
 	ExpectedPackage bool   `json:"expected_package"`
+	ExpectedPerson  bool   `json:"expected_person"`
+}
+
+// confusionMatrix accumulates binary classification statistics for one label.
+type confusionMatrix struct{ TP, FP, TN, FN int }
+
+func (c *confusionMatrix) Record(expected, predicted bool) {
+	switch {
+	case expected && predicted:
+		c.TP++
+	case !expected && predicted:
+		c.FP++
+	case !expected && !predicted:
+		c.TN++
+	default: // expected && !predicted
+		c.FN++
+	}
+}
+
+func (c confusionMatrix) Precision() float64 {
+	if c.TP+c.FP == 0 {
+		return 1.0
+	}
+	return float64(c.TP) / float64(c.TP+c.FP)
+}
+
+func (c confusionMatrix) Recall() float64 {
+	if c.TP+c.FN == 0 {
+		return 1.0
+	}
+	return float64(c.TP) / float64(c.TP+c.FN)
+}
+
+func (c confusionMatrix) F1() float64 {
+	p, r := c.Precision(), c.Recall()
+	if p+r == 0 {
+		return 0
+	}
+	return 2 * p * r / (p + r)
 }
 
 type replayInferenceClient struct{}
@@ -31,7 +70,7 @@ type replayInferenceClient struct{}
 func (replayInferenceClient) AnalyzeFrame(_ context.Context, req inference.FrameRequest) (inference.FrameResponse, error) {
 	decoded, _ := base64.StdEncoding.DecodeString(req.FrameB64)
 	tag := string(decoded)
-	detections := make([]inference.Detection, 0, 1)
+	detections := make([]inference.Detection, 0, 2)
 	if strings.Contains(tag, "package") {
 		detections = append(detections, inference.Detection{
 			CameraID:   req.CameraID,
@@ -40,7 +79,8 @@ func (replayInferenceClient) AnalyzeFrame(_ context.Context, req inference.Frame
 			Confidence: 0.95,
 			Timestamp:  req.Captured,
 		})
-	} else if strings.Contains(tag, "person") {
+	}
+	if strings.Contains(tag, "person") {
 		detections = append(detections, inference.Detection{
 			CameraID:   req.CameraID,
 			ZoneID:     req.ZoneID,
@@ -66,18 +106,13 @@ func TestReplayHarnessPackageDoorLatencyAndAccuracyGates(t *testing.T) {
 	}
 
 	latencies := make([]time.Duration, 0, len(cases))
-	predictedPositive := 0
-	truePositive := 0
+	var pkgCM, personCM confusionMatrix
 
 	for _, tc := range cases {
-		predicted, latency := runReplayCase(t, tc)
+		predPkg, predPerson, latency := runReplayCase(t, tc)
 		latencies = append(latencies, latency)
-		if predicted {
-			predictedPositive++
-			if tc.ExpectedPackage {
-				truePositive++
-			}
-		}
+		pkgCM.Record(tc.ExpectedPackage, predPkg)
+		personCM.Record(tc.ExpectedPerson, predPerson)
 	}
 
 	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
@@ -86,16 +121,22 @@ func TestReplayHarnessPackageDoorLatencyAndAccuracyGates(t *testing.T) {
 		t.Fatalf("latency gate failed: p95=%s > 2s", p95)
 	}
 
-	precision := 1.0
-	if predictedPositive > 0 {
-		precision = float64(truePositive) / float64(predictedPositive)
+	t.Logf("package:  precision=%.2f recall=%.2f f1=%.2f  TP=%d FP=%d TN=%d FN=%d",
+		pkgCM.Precision(), pkgCM.Recall(), pkgCM.F1(),
+		pkgCM.TP, pkgCM.FP, pkgCM.TN, pkgCM.FN)
+	t.Logf("person:   precision=%.2f recall=%.2f f1=%.2f  TP=%d FP=%d TN=%d FN=%d",
+		personCM.Precision(), personCM.Recall(), personCM.F1(),
+		personCM.TP, personCM.FP, personCM.TN, personCM.FN)
+
+	if pkgCM.Precision() < 0.90 {
+		t.Fatalf("accuracy gate failed: package precision=%.2f < 0.90", pkgCM.Precision())
 	}
-	if precision < 0.90 {
-		t.Fatalf("accuracy gate failed: precision=%.2f < 0.90", precision)
+	if pkgCM.Recall() < 0.90 {
+		t.Fatalf("accuracy gate failed: package recall=%.2f < 0.90", pkgCM.Recall())
 	}
 }
 
-func runReplayCase(t *testing.T, tc replayCase) (bool, time.Duration) {
+func runReplayCase(t *testing.T, tc replayCase) (predPkg bool, predPerson bool, latency time.Duration) {
 	t.Helper()
 	registry := camera.NewRegistry([]camera.Camera{{
 		ID:        "cam_front_1",
@@ -126,6 +167,7 @@ func runReplayCase(t *testing.T, tc replayCase) (bool, time.Duration) {
 	start := time.Now()
 	deadline := start.Add(1500 * time.Millisecond)
 	for time.Now().Before(deadline) {
+		// Query package state.
 		res := postJSON(t, handler, "/mcp/tools/koala.check_package_at_door", map[string]any{"input": map[string]any{}})
 		if res.Code != http.StatusOK {
 			t.Fatalf("case %s check failed: status=%d", tc.Name, res.Code)
@@ -134,15 +176,36 @@ func runReplayCase(t *testing.T, tc replayCase) (bool, time.Duration) {
 		if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
 			t.Fatalf("case %s decode payload: %v", tc.Name, err)
 		}
-		data := payload["data"].(map[string]any)
-		present := data["package_present"].(bool)
-		if present == tc.ExpectedPackage {
-			return present, time.Since(start)
+		pkgData := payload["data"].(map[string]any)
+		gotPkg := pkgData["package_present"].(bool)
+
+		// Query zone for person state.
+		zoneRes := postJSON(t, handler, "/mcp/tools/koala.get_zone_state",
+			map[string]any{"input": map[string]any{"zone_id": "front_door"}})
+		gotPerson := false
+		if zoneRes.Code == http.StatusOK {
+			var zonePayload map[string]any
+			if err := json.Unmarshal(zoneRes.Body.Bytes(), &zonePayload); err == nil {
+				if zd, ok := zonePayload["data"].(map[string]any); ok {
+					if entities, ok := zd["entities"].([]any); ok {
+						for _, e := range entities {
+							em := e.(map[string]any)
+							if em["label"] == "person" && em["present"].(bool) {
+								gotPerson = true
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if gotPkg == tc.ExpectedPackage && gotPerson == tc.ExpectedPerson {
+			return gotPkg, gotPerson, time.Since(start)
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
 
-	return false, time.Since(start)
+	return false, false, time.Since(start)
 }
 
 func loadReplayCases(path string) ([]replayCase, error) {

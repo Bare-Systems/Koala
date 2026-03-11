@@ -1,8 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
 from typing import Any
+
+
+@dataclass(slots=True)
+class BBox:
+    """Axis-aligned bounding box in normalized (0–1) frame coordinates."""
+    x: float = 0.0
+    y: float = 0.0
+    w: float = 1.0
+    h: float = 1.0
 
 
 @dataclass(slots=True)
@@ -12,6 +21,7 @@ class Detection:
     label: str
     confidence: float
     timestamp: str
+    bbox: BBox = field(default_factory=BBox)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
