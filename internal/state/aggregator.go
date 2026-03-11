@@ -29,20 +29,30 @@ type ZoneState struct {
 }
 
 type Aggregator struct {
-	mu      sync.RWMutex
-	window  time.Duration
-	history map[string][]Detection
-	tracked map[string]struct{}
+	mu            sync.RWMutex
+	window        time.Duration
+	minDetections int // 0 = disabled; >0 = min count required to declare entity present
+	history       map[string][]Detection
+	tracked       map[string]struct{}
 }
 
-func NewAggregator(window time.Duration) *Aggregator {
+// NewAggregator creates an aggregator with the given freshness window.
+// minDetections sets the temporal smoothing threshold: an entity is only
+// considered present if at least this many detections exist in the window.
+// Pass 0 to disable smoothing (any single detection marks entity as present).
+func NewAggregator(window time.Duration, minDetections ...int) *Aggregator {
 	if window <= 0 {
 		window = 90 * time.Second
 	}
+	n := 0
+	if len(minDetections) > 0 {
+		n = minDetections[0]
+	}
 	return &Aggregator{
-		window:  window,
-		history: map[string][]Detection{},
-		tracked: map[string]struct{}{"package": {}, "person": {}},
+		window:        window,
+		minDetections: n,
+		history:       map[string][]Detection{},
+		tracked:       map[string]struct{}{"package": {}, "person": {}},
 	}
 }
 
@@ -75,8 +85,18 @@ func (a *Aggregator) Zone(zoneID string) ZoneState {
 	now := time.Now().UTC()
 	zoneDetections := a.history[zoneID]
 
+	// Count detections per label for temporal smoothing gate.
+	countByLabel := map[string]int{}
+	for _, d := range zoneDetections {
+		countByLabel[d.Label]++
+	}
+
 	byLabel := map[string]EntityState{}
 	for _, d := range zoneDetections {
+		// Smoothing gate: skip label until it has enough observations.
+		if a.minDetections > 0 && countByLabel[d.Label] < a.minDetections {
+			continue
+		}
 		current, exists := byLabel[d.Label]
 		if !exists || d.ObservedAt.After(current.ObservedAt) || d.Confidence > current.Confidence {
 			byLabel[d.Label] = EntityState{

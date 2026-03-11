@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import koala_inference_pb2 as koala__inference__pb2
+from . import koala_inference_pb2 as koala__inference__pb2
 
 GRPC_GENERATED_VERSION = '1.78.0'
 GRPC_VERSION = grpc.__version__

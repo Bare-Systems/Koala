@@ -1,16 +1,44 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timezone
 from typing import Any
 
 from .models import AnalyzeRequest, Detection
 
+# Maps raw model output class names to canonical Koala labels.
+# Handles COCO / custom-model name variations so the rest of the pipeline
+# only ever sees "person" or "package".
+LABEL_MAP: dict[str, str] = {
+    "person": "person",
+    # YOLO COCO classes that are semantically "a package at a door"
+    "package": "package",
+    "box": "package",
+    "parcel": "package",
+    "suitcase": "package",
+    "backpack": "package",
+    "handbag": "package",
+}
 
-@dataclass(slots=True)
+
+@dataclass
 class DetectorConfig:
     package_threshold: float = 0.55
     person_threshold: float = 0.50
+    # Per-camera label threshold overrides: {camera_id: {label: threshold}}
+    # Falls back to the global threshold when a camera_id is not present.
+    camera_thresholds: dict[str, dict[str, float]] = field(default_factory=dict)
+
+    def threshold_for(self, camera_id: str, label: str) -> float:
+        """Return the confidence threshold for (camera_id, label), with fallback."""
+        per_cam = self.camera_thresholds.get(camera_id, {})
+        if label in per_cam:
+            return per_cam[label]
+        if label == "package":
+            return self.package_threshold
+        if label == "person":
+            return self.person_threshold
+        return 1.0  # unknown label: reject by default
 
 
 class YoloDetector:
@@ -37,54 +65,38 @@ class YoloDetector:
         # Frame payload hints let replay fixtures drive deterministic tests without GPU runtime.
         raw = (req.frame_b64 or "").lower()
         detections: list[Detection] = []
+        ts = req.captured_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         if "package" in raw:
-            detections.append(
-                Detection(
-                    camera_id=req.camera_id,
-                    zone_id=req.zone_id,
-                    label="package",
-                    confidence=0.91,
-                    timestamp=req.captured_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
-                )
-            )
+            detections.append(Detection(
+                camera_id=req.camera_id, zone_id=req.zone_id,
+                label="package", confidence=0.91, timestamp=ts,
+            ))
         if "person" in raw:
-            detections.append(
-                Detection(
-                    camera_id=req.camera_id,
-                    zone_id=req.zone_id,
-                    label="person",
-                    confidence=0.88,
-                    timestamp=req.captured_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
-                )
-            )
-        return self._apply_thresholds(detections)
+            detections.append(Detection(
+                camera_id=req.camera_id, zone_id=req.zone_id,
+                label="person", confidence=0.88, timestamp=ts,
+            ))
+        return self._apply_thresholds(detections, req.camera_id)
 
     def _run_model(self, req: AnalyzeRequest) -> list[Detection]:
         # The actual Jetson path can be swapped to TensorRT export while preserving output schema.
         raw_output = self._model.predict(req.frame_b64 or "", verbose=False)
         detections: list[Detection] = []
+        ts = req.captured_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         for result in raw_output:
             for box in result.boxes:
-                label = result.names[int(box.cls[0])]
-                if label not in {"person", "package"}:
+                raw_label = result.names[int(box.cls[0])]
+                canonical = LABEL_MAP.get(raw_label)
+                if canonical is None:
                     continue
-                detections.append(
-                    Detection(
-                        camera_id=req.camera_id,
-                        zone_id=req.zone_id,
-                        label=label,
-                        confidence=float(box.conf[0]),
-                        timestamp=req.captured_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
-                    )
-                )
-        return self._apply_thresholds(detections)
+                detections.append(Detection(
+                    camera_id=req.camera_id, zone_id=req.zone_id,
+                    label=canonical, confidence=float(box.conf[0]), timestamp=ts,
+                ))
+        return self._apply_thresholds(detections, req.camera_id)
 
-    def _apply_thresholds(self, detections: list[Detection]) -> list[Detection]:
-        output: list[Detection] = []
-        for det in detections:
-            if det.label == "package" and det.confidence < self.config.package_threshold:
-                continue
-            if det.label == "person" and det.confidence < self.config.person_threshold:
-                continue
-            output.append(det)
-        return output
+    def _apply_thresholds(self, detections: list[Detection], camera_id: str) -> list[Detection]:
+        return [
+            det for det in detections
+            if det.confidence >= self.config.threshold_for(camera_id, det.label)
+        ]

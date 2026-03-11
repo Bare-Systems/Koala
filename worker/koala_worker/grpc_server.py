@@ -38,10 +38,29 @@ def _detection_to_pb(d: Detection, timestamp_ms: int) -> pb.Detection:
     )
 
 
+_JPEG_MAGIC = b"\xff\xd8"
+
+
 def _request_from_pb(req: pb.FrameRequest) -> AnalyzeRequest:
-    """Convert a gRPC FrameRequest to our internal AnalyzeRequest."""
+    """Convert a gRPC FrameRequest to our internal AnalyzeRequest.
+
+    For real JPEG frames (magic bytes 0xFF 0xD8) the frame is base64-encoded
+    before being passed to the detector, matching the HTTP path.
+
+    For non-JPEG bytes that are valid UTF-8 the raw text is used as the
+    frame_b64 hint value. This allows deterministic test fixtures to pass
+    plain-text hints like "package" or "person" without a real GPU runtime.
+    """
     captured_at = datetime.fromtimestamp(req.captured_at_unix_ms / 1000.0, tz=timezone.utc)
-    frame_b64 = base64.b64encode(req.frame).decode() if req.frame else None
+    frame_b64: str | None = None
+    if req.frame:
+        if req.frame[:2] == _JPEG_MAGIC:
+            frame_b64 = base64.b64encode(req.frame).decode()
+        else:
+            try:
+                frame_b64 = req.frame.decode("utf-8")
+            except UnicodeDecodeError:
+                frame_b64 = base64.b64encode(req.frame).decode()
     return AnalyzeRequest(
         camera_id=req.camera_id,
         zone_id=req.zone_id,
