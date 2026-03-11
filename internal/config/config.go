@@ -9,14 +9,15 @@ import (
 )
 
 type Config struct {
-	ListenAddr string         `yaml:"listen_addr"`
-	MCPToken   string         `yaml:"mcp_token"`
-	Service    ServiceConfig  `yaml:"service"`
-	Worker     WorkerConfig   `yaml:"worker"`
-	Update     UpdateConfig   `yaml:"update"`
-	Runtime    RuntimeConfig  `yaml:"runtime"`
-	Cameras    []CameraConfig `yaml:"cameras"`
-	Zones      []ZoneConfig   `yaml:"zones"`
+	ConfigVersion string         `yaml:"config_version"`
+	ListenAddr    string         `yaml:"listen_addr"`
+	MCPToken      string         `yaml:"mcp_token"`
+	Service       ServiceConfig  `yaml:"service"`
+	Worker        WorkerConfig   `yaml:"worker"`
+	Update        UpdateConfig   `yaml:"update"`
+	Runtime       RuntimeConfig  `yaml:"runtime"`
+	Cameras       []CameraConfig `yaml:"cameras"`
+	Zones         []ZoneConfig   `yaml:"zones"`
 }
 
 type ServiceConfig struct {
@@ -55,18 +56,21 @@ type RuntimeConfig struct {
 }
 
 type CameraConfig struct {
-	ID          string `yaml:"id"`
-	Name        string `yaml:"name"`
-	RTSPURL     string `yaml:"rtsp_url"`
-	ONVIFURL    string `yaml:"onvif_url"`
-	ZoneID      string `yaml:"zone_id"`
-	FrontDoor   bool   `yaml:"front_door"`
-	ProbeAtBoot bool   `yaml:"probe_at_boot"`
+	ID                  string  `yaml:"id"`
+	Name                string  `yaml:"name"`
+	RTSPURL             string  `yaml:"rtsp_url"`
+	ONVIFURL            string  `yaml:"onvif_url"`
+	ZoneID              string  `yaml:"zone_id"`
+	FrontDoor           bool    `yaml:"front_door"`
+	ProbeAtBoot         bool    `yaml:"probe_at_boot"`
+	ConfidenceThreshold float64 `yaml:"confidence_threshold"` // overrides zone/global default; 0 = use default
+	MaxFPS              int     `yaml:"max_fps"`              // per-camera frame rate cap; 0 = use runtime default
 }
 
 type ZoneConfig struct {
-	ID   string `yaml:"id"`
-	Name string `yaml:"name"`
+	ID                  string  `yaml:"id"`
+	Name                string  `yaml:"name"`
+	ConfidenceThreshold float64 `yaml:"confidence_threshold"` // overrides global default for all cameras in zone; 0 = use global
 }
 
 func Load(path string) (Config, error) {
@@ -88,6 +92,9 @@ func Load(path string) (Config, error) {
 }
 
 func (c *Config) applyDefaults() {
+	if c.ConfigVersion == "" {
+		c.ConfigVersion = "1"
+	}
 	if c.ListenAddr == "" {
 		c.ListenAddr = ":8080"
 	}
@@ -130,6 +137,9 @@ func (c *Config) applyDefaults() {
 }
 
 func (c Config) Validate() error {
+	if c.ConfigVersion != "1" {
+		return fmt.Errorf("config_version %q is not supported; expected \"1\"", c.ConfigVersion)
+	}
 	if c.MCPToken == "" {
 		return fmt.Errorf("mcp_token is required")
 	}
@@ -139,14 +149,55 @@ func (c Config) Validate() error {
 	if len(c.Cameras) == 0 {
 		return fmt.Errorf("at least one camera is required")
 	}
+
+	// Build zone ID set for ref validation.
+	zoneIDs := make(map[string]struct{}, len(c.Zones))
+	for _, z := range c.Zones {
+		if z.ID == "" {
+			return fmt.Errorf("zone.id is required")
+		}
+		if _, dup := zoneIDs[z.ID]; dup {
+			return fmt.Errorf("duplicate zone id %q", z.ID)
+		}
+		zoneIDs[z.ID] = struct{}{}
+		if z.ConfidenceThreshold < 0 || z.ConfidenceThreshold > 1 {
+			return fmt.Errorf("zone %q: confidence_threshold must be between 0 and 1", z.ID)
+		}
+	}
+
+	cameraIDs := make(map[string]struct{}, len(c.Cameras))
+	hasFrontDoor := false
 	for _, camera := range c.Cameras {
 		if camera.ID == "" {
 			return fmt.Errorf("camera.id is required")
 		}
+		if _, dup := cameraIDs[camera.ID]; dup {
+			return fmt.Errorf("duplicate camera id %q", camera.ID)
+		}
+		cameraIDs[camera.ID] = struct{}{}
+
 		if camera.ZoneID == "" {
-			return fmt.Errorf("camera.zone_id is required")
+			return fmt.Errorf("camera %q: zone_id is required", camera.ID)
+		}
+		if len(c.Zones) > 0 {
+			if _, ok := zoneIDs[camera.ZoneID]; !ok {
+				return fmt.Errorf("camera %q references unknown zone_id %q", camera.ID, camera.ZoneID)
+			}
+		}
+		if camera.ConfidenceThreshold < 0 || camera.ConfidenceThreshold > 1 {
+			return fmt.Errorf("camera %q: confidence_threshold must be between 0 and 1", camera.ID)
+		}
+		if camera.MaxFPS < 0 {
+			return fmt.Errorf("camera %q: max_fps must be >= 0", camera.ID)
+		}
+		if camera.FrontDoor {
+			hasFrontDoor = true
 		}
 	}
+	if !hasFrontDoor {
+		return fmt.Errorf("at least one camera must have front_door: true")
+	}
+
 	if c.Update.Enabled {
 		if strings.TrimSpace(c.Update.EncryptionKeyBase64) == "" {
 			return fmt.Errorf("update.encryption_key_base64 is required when update.enabled=true")

@@ -193,13 +193,15 @@ func toCameras(cfg config.Config) []camera.Camera {
 	cameras := make([]camera.Camera, 0, len(cfg.Cameras))
 	for _, c := range cfg.Cameras {
 		cameras = append(cameras, camera.Camera{
-			ID:        c.ID,
-			Name:      c.Name,
-			RTSPURL:   c.RTSPURL,
-			ONVIFURL:  c.ONVIFURL,
-			ZoneID:    c.ZoneID,
-			FrontDoor: c.FrontDoor,
-			Status:    camera.StatusUnknown,
+			ID:                  c.ID,
+			Name:                c.Name,
+			RTSPURL:             c.RTSPURL,
+			ONVIFURL:            c.ONVIFURL,
+			ZoneID:              c.ZoneID,
+			FrontDoor:           c.FrontDoor,
+			Status:              camera.StatusUnknown,
+			MaxFPS:              c.MaxFPS,
+			ConfidenceThreshold: c.ConfidenceThreshold,
 		})
 	}
 	return cameras

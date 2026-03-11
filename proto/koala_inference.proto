@@ -4,6 +4,10 @@ package koala.inference.v1;
 
 option go_package = "github.com/barelabs/koala/proto/inferencev1";
 
+// contract_version is embedded in every FrameRequest so orchestrator and worker
+// can detect version mismatches without an out-of-band handshake.
+// Current value: "1"
+
 message BBox {
   float x = 1;
   float y = 2;
@@ -26,6 +30,8 @@ message FrameRequest {
   string zone_id = 3;
   bytes frame = 4;
   int64 captured_at_unix_ms = 5;
+  // contract_version identifies the proto schema version. Must be "1".
+  string contract_version = 6;
 }
 
 message FrameResponse {
@@ -48,6 +54,8 @@ message HealthRequest {}
 message HealthResponse {
   string status = 1;
   string version = 2;
+  // contract_version reported by the worker. Orchestrator checks this matches.
+  string contract_version = 3;
 }
 
 service InferenceWorker {

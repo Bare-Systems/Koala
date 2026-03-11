@@ -14,8 +14,17 @@ type Submitter interface {
 	Submit(task service.FrameTask) bool
 }
 
+// Snapshotter captures a single JPEG frame from an RTSP stream.
 type Snapshotter interface {
 	Capture(ctx context.Context, rtspURL string) ([]byte, error)
+}
+
+// PerCameraSnapshotter is an optional extension of Snapshotter that supports
+// per-URL FPS overrides. If the Snapshotter implements this interface, the
+// Manager will call CaptureAtFPS instead of Capture when a camera has MaxFPS set.
+type PerCameraSnapshotter interface {
+	Snapshotter
+	CaptureAtFPS(ctx context.Context, rtspURL string, fps int) ([]byte, error)
 }
 
 type CameraStats struct {
@@ -132,7 +141,13 @@ func (m *Manager) Status() Status {
 }
 
 func (m *Manager) runCamera(ctx context.Context, cam camera.Camera) {
-	ticker := time.NewTicker(m.sampleEvery)
+	// Honour per-camera FPS if set; fall back to manager-wide default.
+	sampleEvery := m.sampleEvery
+	camFPS := cam.MaxFPS
+	if camFPS > 0 {
+		sampleEvery = time.Second / time.Duration(camFPS)
+	}
+	ticker := time.NewTicker(sampleEvery)
 	defer ticker.Stop()
 
 	for {
@@ -142,7 +157,13 @@ func (m *Manager) runCamera(ctx context.Context, cam camera.Camera) {
 		case <-ticker.C:
 			m.increment(cam.ID, func(s *CameraStats) { s.Attempts++ })
 			captureCtx, cancel := context.WithTimeout(ctx, m.captureTimeout)
-			frame, err := m.snapshotter.Capture(captureCtx, cam.RTSPURL)
+			var frame []byte
+			var err error
+			if pcs, ok := m.snapshotter.(PerCameraSnapshotter); ok && camFPS > 0 {
+				frame, err = pcs.CaptureAtFPS(captureCtx, cam.RTSPURL, camFPS)
+			} else {
+				frame, err = m.snapshotter.Capture(captureCtx, cam.RTSPURL)
+			}
 			cancel()
 			if err != nil {
 				m.markFailure(cam.ID, err)

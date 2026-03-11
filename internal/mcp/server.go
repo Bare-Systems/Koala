@@ -59,18 +59,28 @@ func (s *Server) Routes() http.Handler {
 func (s *Server) wrapAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost && r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			s.writeToolError(w, http.StatusMethodNotAllowed, ErrCodeInvalidInput, "method not allowed", "")
 			return
 		}
 
 		auth := r.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") || strings.TrimPrefix(auth, "Bearer ") != s.token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			s.writeToolError(w, http.StatusUnauthorized, ErrCodeUnauthorized, "missing or invalid bearer token", "provide a valid Authorization: Bearer <token> header")
 			return
 		}
 
 		next(w, r)
 	}
+}
+
+// writeToolError writes a structured JSON error response with the given HTTP status code.
+func (s *Server) writeToolError(w http.ResponseWriter, httpCode int, errCode, explanation, nextAction string) {
+	s.writeJSON(w, httpCode, ToolResponse{
+		Status:      "error",
+		Explanation: explanation,
+		ErrorCode:   errCode,
+		NextAction:  nextAction,
+	})
 }
 
 func (s *Server) decodeToolRequest(r *http.Request) (ToolRequest, error) {
@@ -127,13 +137,13 @@ func (s *Server) listCameras(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) getZoneState(w http.ResponseWriter, r *http.Request) {
 	req, err := s.decodeToolRequest(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 
 	zoneID, err := readRequiredString(req.Input, "zone_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "provide zone_id in the input object")
 		return
 	}
 	zone := s.service.ZoneState(zoneID)
@@ -158,13 +168,13 @@ func (s *Server) getZoneState(w http.ResponseWriter, r *http.Request) {
 func (s *Server) checkPackageAtDoor(w http.ResponseWriter, r *http.Request) {
 	req, err := s.decodeToolRequest(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	cameraID, _ := readOptionalString(req.Input, "camera_id")
 	present, confidence, observedAt, err := s.service.DoorPackageState(cameraID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "provide a valid camera_id or omit to use the default front door camera")
 		return
 	}
 	status := "ok"
@@ -192,17 +202,17 @@ func (s *Server) checkPackageAtDoor(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ingestFrame(w http.ResponseWriter, r *http.Request) {
 	req, err := s.decodeToolRequest(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	cameraID, err := readRequiredString(req.Input, "camera_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "provide camera_id in the input object")
 		return
 	}
 	zoneID, err := readRequiredString(req.Input, "zone_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "provide zone_id in the input object")
 		return
 	}
 	frameB64, _ := readOptionalString(req.Input, "frame_b64")
@@ -228,7 +238,7 @@ func (s *Server) ingestFrame(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateStatus(w http.ResponseWriter, _ *http.Request) {
 	if s.updater == nil {
-		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "updates are not configured", "enable update.enabled in the server config")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
@@ -243,7 +253,7 @@ func (s *Server) updateStatus(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) ingestStatus(w http.ResponseWriter, _ *http.Request) {
 	if s.ingest == nil {
-		http.Error(w, "ingest workers are not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "ingest workers are not configured", "enable runtime.enable_stream_workers in the server config")
 		return
 	}
 	status := s.ingest.Status()
@@ -256,22 +266,22 @@ func (s *Server) ingestStatus(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request) {
 	if s.updater == nil {
-		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "updates are not configured", "enable update.enabled in the server config")
 		return
 	}
 	req, err := s.decodeToolRequest(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	manifest, deviceIDs, err := parseUpdateInput(req.Input)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	result, err := s.updater.Check(manifest, deviceIDs)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
@@ -285,22 +295,22 @@ func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateStage(w http.ResponseWriter, r *http.Request) {
 	if s.updater == nil {
-		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "updates are not configured", "enable update.enabled in the server config")
 		return
 	}
 	req, err := s.decodeToolRequest(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	manifest, deviceIDs, err := parseUpdateInput(req.Input)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	devices, err := s.updater.Stage(manifest, deviceIDs)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
@@ -314,22 +324,22 @@ func (s *Server) updateStage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateApply(w http.ResponseWriter, r *http.Request) {
 	if s.updater == nil {
-		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "updates are not configured", "enable update.enabled in the server config")
 		return
 	}
 	req, err := s.decodeToolRequest(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	deviceIDs, err := readDeviceIDs(req.Input)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	devices, err := s.updater.Apply(deviceIDs)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
@@ -343,23 +353,23 @@ func (s *Server) updateApply(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateRollback(w http.ResponseWriter, r *http.Request) {
 	if s.updater == nil {
-		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "updates are not configured", "enable update.enabled in the server config")
 		return
 	}
 	req, err := s.decodeToolRequest(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	deviceIDs, err := readDeviceIDs(req.Input)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	reason, _ := readOptionalString(req.Input, "reason")
 	devices, err := s.updater.Rollback(deviceIDs, reason)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
@@ -373,12 +383,12 @@ func (s *Server) updateRollback(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateSecurity(w http.ResponseWriter, r *http.Request) {
 	if s.agent == nil {
-		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "updates are not configured", "enable update.enabled in the server config")
 		return
 	}
 	health, err := s.agent.Health(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	attempts, _ := health["unknown_key_attempts"]
@@ -409,23 +419,23 @@ func (s *Server) updateSecurity(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateHistory(w http.ResponseWriter, r *http.Request) {
 	if s.auditStore == nil {
-		http.Error(w, "audit store is not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "audit store is not configured", "set update.audit_db_path in the server config")
 		return
 	}
 	req, err := s.decodeToolRequest(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	category, _ := readOptionalString(req.Input, "category")
 	limit, err := readOptionalInt(req.Input, "limit")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	events, err := s.auditStore.List(r.Context(), audit.ListOptions{Category: category, Limit: limit})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.writeToolError(w, http.StatusInternalServerError, ErrCodeInternalError, err.Error(), "check koala.get_system_health for service state")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
@@ -439,33 +449,33 @@ func (s *Server) updateHistory(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) rolloutStart(w http.ResponseWriter, r *http.Request) {
 	if s.updater == nil {
-		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "updates are not configured", "enable update.enabled in the server config")
 		return
 	}
 	req, err := s.decodeToolRequest(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	manifest, deviceIDs, err := parseUpdateInput(req.Input)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	modeRaw, _ := readOptionalString(req.Input, "mode")
 	batchSize, err := readOptionalInt(req.Input, "batch_size")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	maxFailures, err := readOptionalInt(req.Input, "max_failures")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	pauseMs, err := readOptionalInt(req.Input, "pause_between_batches_ms")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	rollbackScope, _ := readOptionalString(req.Input, "rollback_scope")
@@ -480,7 +490,7 @@ func (s *Server) rolloutStart(w http.ResponseWriter, r *http.Request) {
 		RollbackScope:       rollbackScope,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
@@ -504,22 +514,22 @@ func (s *Server) rolloutStart(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) rolloutGet(w http.ResponseWriter, r *http.Request) {
 	if s.updater == nil {
-		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "updates are not configured", "enable update.enabled in the server config")
 		return
 	}
 	req, err := s.decodeToolRequest(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	rolloutID, err := readRequiredString(req.Input, "rollout_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	rollout, ok := s.updater.GetRollout(rolloutID)
 	if !ok {
-		http.Error(w, "rollout not found", http.StatusNotFound)
+		s.writeToolError(w, http.StatusNotFound, ErrCodeInvalidInput, "rollout not found", "use /admin/updates/rollouts/list to get valid rollout IDs")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
@@ -531,7 +541,7 @@ func (s *Server) rolloutGet(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) rolloutList(w http.ResponseWriter, _ *http.Request) {
 	if s.updater == nil {
-		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "updates are not configured", "enable update.enabled in the server config")
 		return
 	}
 	rollouts := s.updater.ListRollouts()
@@ -546,12 +556,12 @@ func (s *Server) rolloutList(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) agentHealth(w http.ResponseWriter, r *http.Request) {
 	if s.agent == nil {
-		http.Error(w, "agent not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "agent not configured", "enable update.enabled in the server config")
 		return
 	}
 	health, err := s.agent.Health(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
@@ -563,18 +573,18 @@ func (s *Server) agentHealth(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) agentStage(w http.ResponseWriter, r *http.Request) {
 	if s.agent == nil {
-		http.Error(w, "agent not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "agent not configured", "enable update.enabled in the server config")
 		return
 	}
 	var payload struct {
 		Manifest update.Manifest `json:"manifest"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	if err := s.agent.Stage(r.Context(), payload.Manifest); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
@@ -585,11 +595,11 @@ func (s *Server) agentStage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) agentApply(w http.ResponseWriter, r *http.Request) {
 	if s.agent == nil {
-		http.Error(w, "agent not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "agent not configured", "enable update.enabled in the server config")
 		return
 	}
 	if err := s.agent.Apply(r.Context()); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
@@ -600,7 +610,7 @@ func (s *Server) agentApply(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) agentRollback(w http.ResponseWriter, r *http.Request) {
 	if s.agent == nil {
-		http.Error(w, "agent not configured", http.StatusNotImplemented)
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "agent not configured", "enable update.enabled in the server config")
 		return
 	}
 	var payload struct {
@@ -608,7 +618,7 @@ func (s *Server) agentRollback(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&payload)
 	if err := s.agent.Rollback(r.Context(), payload.Reason); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{

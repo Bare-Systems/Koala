@@ -33,7 +33,13 @@ func NewPersistentFFMpegSnapshotter(sampleFPS int) *PersistentFFMpegSnapshotter 
 }
 
 func (s *PersistentFFMpegSnapshotter) Capture(ctx context.Context, rtspURL string) ([]byte, error) {
-	worker, err := s.ensureWorker(rtspURL)
+	return s.CaptureAtFPS(ctx, rtspURL, 0)
+}
+
+// CaptureAtFPS captures a frame from rtspURL. If fps > 0 it overrides the default
+// sample rate for a new worker; existing workers for the URL are reused as-is.
+func (s *PersistentFFMpegSnapshotter) CaptureAtFPS(ctx context.Context, rtspURL string, fps int) ([]byte, error) {
+	worker, err := s.ensureWorker(rtspURL, fps)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +59,7 @@ func (s *PersistentFFMpegSnapshotter) Close() error {
 	return nil
 }
 
-func (s *PersistentFFMpegSnapshotter) ensureWorker(rtspURL string) (*ffmpegWorker, error) {
+func (s *PersistentFFMpegSnapshotter) ensureWorker(rtspURL string, fpsOverride int) (*ffmpegWorker, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -62,7 +68,11 @@ func (s *PersistentFFMpegSnapshotter) ensureWorker(rtspURL string) (*ffmpegWorke
 	if w, ok := s.workers[rtspURL]; ok {
 		return w, nil
 	}
-	w := newFFMpegWorker(s.binary, rtspURL, s.sampleFPS)
+	fps := s.sampleFPS
+	if fpsOverride > 0 {
+		fps = fpsOverride
+	}
+	w := newFFMpegWorker(s.binary, rtspURL, fps)
 	s.workers[rtspURL] = w
 	w.Start()
 	return w, nil

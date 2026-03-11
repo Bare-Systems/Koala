@@ -20,14 +20,16 @@ type Capability struct {
 }
 
 type Camera struct {
-	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	RTSPURL    string     `json:"rtsp_url,omitempty"`
-	ONVIFURL   string     `json:"onvif_url,omitempty"`
-	ZoneID     string     `json:"zone_id"`
-	FrontDoor  bool       `json:"front_door"`
-	Status     Status     `json:"status"`
-	Capability Capability `json:"capability"`
+	ID                  string     `json:"id"`
+	Name                string     `json:"name"`
+	RTSPURL             string     `json:"rtsp_url,omitempty"`
+	ONVIFURL            string     `json:"onvif_url,omitempty"`
+	ZoneID              string     `json:"zone_id"`
+	FrontDoor           bool       `json:"front_door"`
+	Status              Status     `json:"status"`
+	Capability          Capability `json:"capability"`
+	MaxFPS              int        `json:"max_fps,omitempty"`              // 0 = use manager default
+	ConfidenceThreshold float64    `json:"confidence_threshold,omitempty"` // 0 = use zone/global default
 }
 
 type Registry struct {
