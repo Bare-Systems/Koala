@@ -44,7 +44,15 @@ type ServiceConfig struct {
 }
 
 type WorkerConfig struct {
+	// URL is the HTTP endpoint for the legacy HTTP inference transport.
+	// Required when Protocol is "http".
 	URL string `yaml:"url"`
+	// Protocol selects the inference transport: "grpc" (default) or "http".
+	// If omitted, auto-detected from which address field is populated.
+	Protocol string `yaml:"protocol"`
+	// GRPCAddr is the gRPC target address (e.g. "localhost:50051").
+	// Required when Protocol is "grpc".
+	GRPCAddr string `yaml:"grpc_addr"`
 }
 
 type UpdateConfig struct {
@@ -65,11 +73,14 @@ type UpdateConfig struct {
 }
 
 type RuntimeConfig struct {
-	QueueSize             int  `yaml:"queue_size"`
-	FreshnessWindow       int  `yaml:"freshness_window_seconds"`
-	EnableStreamWorkers   bool `yaml:"enable_stream_workers"`
-	StreamSampleFPS       int  `yaml:"stream_sample_fps"`
-	StreamCaptureTimeoutS int  `yaml:"stream_capture_timeout_seconds"`
+	QueueSize             int    `yaml:"queue_size"`
+	FreshnessWindow       int    `yaml:"freshness_window_seconds"`
+	EnableStreamWorkers   bool   `yaml:"enable_stream_workers"`
+	StreamSampleFPS       int    `yaml:"stream_sample_fps"`
+	StreamCaptureTimeoutS int    `yaml:"stream_capture_timeout_seconds"`
+	// CapabilityCachePath is the path to the JSON file used to persist
+	// last-known camera probe results across restarts. Empty = no caching.
+	CapabilityCachePath string `yaml:"capability_cache_path"`
 }
 
 type CameraConfig struct {

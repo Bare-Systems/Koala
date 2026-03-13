@@ -146,6 +146,7 @@ func runReplayCase(t *testing.T, tc replayCase) (predPkg bool, predPerson bool, 
 		Status:    camera.StatusAvailable,
 	}})
 	svc := service.New(registry, state.NewAggregator(time.Minute), replayInferenceClient{}, 8)
+	svc.FrameBufferEnabled = true // replay test uses frame content for detection; enable forwarding
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	svc.Start(ctx)

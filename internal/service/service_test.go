@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -99,13 +100,27 @@ func TestServiceDegradedOnInferenceError(t *testing.T) {
 }
 
 // capturingClient records the FrameB64 values it receives.
+// mu guards captured because AnalyzeFrame is called from a worker goroutine
+// while the test goroutine reads captured after time.Sleep.
 type capturingClient struct {
+	mu       sync.Mutex
 	captured []string
 }
 
 func (c *capturingClient) AnalyzeFrame(_ context.Context, req inference.FrameRequest) (inference.FrameResponse, error) {
+	c.mu.Lock()
 	c.captured = append(c.captured, req.FrameB64)
+	c.mu.Unlock()
 	return inference.FrameResponse{}, nil
+}
+
+// snapshot returns a copy of captured under the lock.
+func (c *capturingClient) snapshot() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]string, len(c.captured))
+	copy(out, c.captured)
+	return out
 }
 
 func (c *capturingClient) WorkerHealth(_ context.Context) (inference.HealthResponse, error) {
@@ -125,11 +140,12 @@ func TestPrivacy_FrameStrippedByDefault(t *testing.T) {
 	svc.Submit(FrameTask{CameraID: "cam1", ZoneID: "front_door", FrameB64: "base64data", Captured: time.Now().UTC()})
 	time.Sleep(30 * time.Millisecond)
 
-	if len(client.captured) == 0 {
+	captured := client.snapshot()
+	if len(captured) == 0 {
 		t.Fatal("expected at least one inference call")
 	}
-	if client.captured[0] != "" {
-		t.Fatalf("expected frame_b64 to be stripped in metadata-only mode, got %q", client.captured[0])
+	if captured[0] != "" {
+		t.Fatalf("expected frame_b64 to be stripped in metadata-only mode, got %q", captured[0])
 	}
 }
 
@@ -146,10 +162,11 @@ func TestPrivacy_FrameForwardedWhenEnabled(t *testing.T) {
 	svc.Submit(FrameTask{CameraID: "cam1", ZoneID: "front_door", FrameB64: "base64data", Captured: time.Now().UTC()})
 	time.Sleep(30 * time.Millisecond)
 
-	if len(client.captured) == 0 {
+	captured := client.snapshot()
+	if len(captured) == 0 {
 		t.Fatal("expected at least one inference call")
 	}
-	if client.captured[0] != "base64data" {
-		t.Fatalf("expected frame_b64 to be forwarded when enabled, got %q", client.captured[0])
+	if captured[0] != "base64data" {
+		t.Fatalf("expected frame_b64 to be forwarded when enabled, got %q", captured[0])
 	}
 }
