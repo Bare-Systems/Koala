@@ -59,10 +59,18 @@ func main() {
 		}
 	}
 
-	aggregator := state.NewAggregator(time.Duration(cfg.Runtime.FreshnessWindow) * time.Second)
+	freshnessWindow := time.Duration(cfg.Runtime.FreshnessWindow) * time.Second
+	if cfg.Privacy.MetadataRetentionSeconds > 0 {
+		freshnessWindow = time.Duration(cfg.Privacy.MetadataRetentionSeconds) * time.Second
+	}
+	aggregator := state.NewAggregator(freshnessWindow)
 	client := inference.NewHTTPClient(cfg.Worker.URL)
 	svc := service.New(registry, aggregator, client, cfg.Runtime.QueueSize)
 	svc.Filter = service.NewZoneFilter(toZoneFilters(cfg))
+	svc.FrameBufferEnabled = cfg.Privacy.FrameBufferEnabled
+	if !cfg.Privacy.FrameBufferEnabled {
+		log.Printf("startup: privacy=metadata-only frame_buffer_enabled=false")
+	}
 	auditStore, err := audit.NewSQLiteStore(cfg.Update.AuditDBPath)
 	if err != nil {
 		log.Fatalf("init audit sqlite: %v", err)
@@ -137,9 +145,13 @@ func main() {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+
+	log.Printf("startup: starting inference service worker pool cameras=%d queue=%d",
+		len(registry.List()), cfg.Runtime.QueueSize)
 	svc.Start(ctx)
+
 	if cfg.Runtime.EnableStreamWorkers {
+		log.Printf("startup: starting stream ingest workers fps=%d", cfg.Runtime.StreamSampleFPS)
 		sampleEvery := time.Second / time.Duration(cfg.Runtime.StreamSampleFPS)
 		captureTimeout := time.Duration(cfg.Runtime.StreamCaptureTimeoutS) * time.Second
 		snapshotter := ingest.NewPersistentFFMpegSnapshotter(cfg.Runtime.StreamSampleFPS)
@@ -147,6 +159,7 @@ func main() {
 		ingestManager.Start(ctx)
 	}
 	if poller != nil {
+		log.Printf("startup: starting update poller interval=%ds", cfg.Update.PollIntervalSeconds)
 		poller.Start(ctx)
 	}
 
@@ -160,21 +173,33 @@ func main() {
 			case <-tick.C:
 				healthy := svc.WorkerHealthy(ctx)
 				if !healthy {
-					log.Printf("worker health degraded")
+					log.Printf("service=worker status=degraded")
 				}
 			}
 		}
 	}()
 
+	mcpSrv := mcp.NewServer(cfg.MCPToken, svc, updater, agent, poller, ingestManager, auditStore).
+		WithConfigSnapshot(buildConfigSnapshot(cfg))
+	if len(cfg.AllowedIPs) > 0 {
+		allowlist, alErr := mcp.NewIPAllowlist(cfg.AllowedIPs)
+		if alErr != nil {
+			log.Fatalf("invalid allowed_ips config: %v", alErr)
+		}
+		mcpSrv = mcpSrv.WithAllowlist(allowlist)
+		log.Printf("startup: IP allowlist enabled entries=%d", len(cfg.AllowedIPs))
+	}
+	mcpServer := mcpSrv
 	server := &http.Server{
 		Addr:         cfg.ListenAddr,
-		Handler:      mcp.NewServer(cfg.MCPToken, svc, updater, agent, poller, ingestManager, auditStore).Routes(),
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
+		Handler:      mcpServer.Routes(),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {
-		log.Printf("koala orchestrator listening on %s", cfg.ListenAddr)
+		log.Printf("startup: koala orchestrator ready addr=%s", cfg.ListenAddr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %v", err)
 		}
@@ -182,12 +207,70 @@ func main() {
 
 	sigch := make(chan os.Signal, 1)
 	signal.Notify(sigch, syscall.SIGINT, syscall.SIGTERM)
-	<-sigch
+	sig := <-sigch
+	log.Printf("shutdown: received signal=%s — draining in-flight work", sig)
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Stop accepting new requests; allow up to 15s for in-flight HTTP to finish.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown error: %v", err)
+		log.Printf("shutdown: HTTP server shutdown error: %v", err)
+	}
+
+	// Cancel background workers then drain the frame processing queue.
+	cancel()
+	svc.Drain()
+	log.Printf("shutdown: complete")
+}
+
+// buildConfigSnapshot returns a sanitised view of cfg for the /admin/config
+// endpoint. Sensitive fields (tokens, keys, passwords) are redacted.
+func buildConfigSnapshot(cfg config.Config) map[string]any {
+	cameras := make([]map[string]any, 0, len(cfg.Cameras))
+	for _, c := range cfg.Cameras {
+		cameras = append(cameras, map[string]any{
+			"id":         c.ID,
+			"name":       c.Name,
+			"zone_id":    c.ZoneID,
+			"front_door": c.FrontDoor,
+			"rtsp_set":   c.RTSPURL != "",
+			"onvif_set":  c.ONVIFURL != "",
+			"max_fps":    c.MaxFPS,
+		})
+	}
+	zones := make([]map[string]any, 0, len(cfg.Zones))
+	for _, z := range cfg.Zones {
+		zones = append(zones, map[string]any{
+			"id":               z.ID,
+			"polygon_vertices": len(z.Polygon),
+			"min_bbox_overlap": z.MinBBoxOverlap,
+		})
+	}
+	return map[string]any{
+		"listen_addr": cfg.ListenAddr,
+		"service": map[string]any{
+			"version":   cfg.Service.Version,
+			"device_id": cfg.Service.DeviceID,
+			"address":   cfg.Service.Address,
+		},
+		"runtime": map[string]any{
+			"freshness_window_s":      cfg.Runtime.FreshnessWindow,
+			"queue_size":              cfg.Runtime.QueueSize,
+			"enable_stream_workers":   cfg.Runtime.EnableStreamWorkers,
+			"stream_sample_fps":       cfg.Runtime.StreamSampleFPS,
+		},
+		"worker": map[string]any{
+			"url": cfg.Worker.URL,
+		},
+		"update": map[string]any{
+			"enabled":         cfg.Update.Enabled,
+			"poll_enabled":    cfg.Update.PollEnabled,
+			"poll_interval_s": cfg.Update.PollIntervalSeconds,
+			// sensitive fields (keys, tokens) are intentionally omitted
+		},
+		"cameras": cameras,
+		"zones":   zones,
+		"mcp_token_set": cfg.MCPToken != "",
 	}
 }
 

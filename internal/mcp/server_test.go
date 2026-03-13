@@ -119,3 +119,48 @@ func TestServer_DegradedResponse(t *testing.T) {
 		t.Fatalf("expected degraded status, got %v", payload["status"])
 	}
 }
+
+func TestServer_AdminConfig_NoSnapshot(t *testing.T) {
+	_, h := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/admin/config", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.Code)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["status"] != "ok" {
+		t.Fatalf("expected status=ok, got %v", payload["status"])
+	}
+}
+
+func TestServer_AdminConfig_WithSnapshot(t *testing.T) {
+	registry := camera.NewRegistry([]camera.Camera{{ID: "cam_front_1", ZoneID: "front_door", FrontDoor: true}})
+	svc := service.New(registry, state.NewAggregator(time.Minute), fakeInferenceClient{}, 2)
+	snap := map[string]any{
+		"listen_addr": ":8080",
+		"cameras":     []any{},
+	}
+	h := NewServer("test-token", svc, nil, nil, nil, nil, nil).
+		WithConfigSnapshot(snap).Routes()
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/config", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.Code)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	data := payload["data"].(map[string]any)
+	if data["listen_addr"] != ":8080" {
+		t.Fatalf("expected listen_addr=:8080 in snapshot, got %v", data["listen_addr"])
+	}
+}

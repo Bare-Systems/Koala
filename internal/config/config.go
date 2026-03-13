@@ -12,12 +12,29 @@ type Config struct {
 	ConfigVersion string         `yaml:"config_version"`
 	ListenAddr    string         `yaml:"listen_addr"`
 	MCPToken      string         `yaml:"mcp_token"`
-	Service       ServiceConfig  `yaml:"service"`
-	Worker        WorkerConfig   `yaml:"worker"`
-	Update        UpdateConfig   `yaml:"update"`
-	Runtime       RuntimeConfig  `yaml:"runtime"`
-	Cameras       []CameraConfig `yaml:"cameras"`
-	Zones         []ZoneConfig   `yaml:"zones"`
+	// AllowedIPs is an optional list of IP addresses or CIDR ranges
+	// permitted to call the MCP server. Empty = allow all (default).
+	AllowedIPs []string      `yaml:"allowed_ips"`
+	Service    ServiceConfig `yaml:"service"`
+	Worker     WorkerConfig  `yaml:"worker"`
+	Update     UpdateConfig  `yaml:"update"`
+	Runtime    RuntimeConfig `yaml:"runtime"`
+	Privacy    PrivacyConfig `yaml:"privacy"`
+	Cameras    []CameraConfig `yaml:"cameras"`
+	Zones      []ZoneConfig   `yaml:"zones"`
+}
+
+// PrivacyConfig controls data retention and frame buffer behaviour.
+// Koala's default stance is "metadata-only": only detection labels, confidence
+// scores, and timestamps are retained — never raw pixel data. Enable
+// frame_buffer_enabled only when live clip analysis is explicitly needed.
+type PrivacyConfig struct {
+	// FrameBufferEnabled controls whether raw frame data (frame_b64) is
+	// forwarded to the inference worker. Default false (metadata-only).
+	FrameBufferEnabled bool `yaml:"frame_buffer_enabled"`
+	// MetadataRetentionSeconds caps how long detection metadata is kept in
+	// the sliding-window aggregator. 0 means use runtime.freshness_window_seconds.
+	MetadataRetentionSeconds int `yaml:"metadata_retention_seconds"`
 }
 
 type ServiceConfig struct {

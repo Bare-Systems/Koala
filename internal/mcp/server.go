@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/barelabs/koala/internal/audit"
@@ -18,18 +19,61 @@ import (
 	"github.com/barelabs/koala/internal/update"
 )
 
+const (
+	// defaultMaxBodyBytes caps request bodies at 5 MiB. Large enough for a
+	// base64-encoded JPEG frame; small enough to reject garbage payloads.
+	defaultMaxBodyBytes int64 = 5 << 20 // 5 MiB
+)
+
 type Server struct {
-	token      string
-	service    *service.Service
-	updater    *update.Manager
-	agent      update.Agent
-	poller     *update.Poller
-	ingest     *ingest.Manager
-	auditStore audit.Store
+	token          atomic.Pointer[string] // rotatable bearer token
+	service        *service.Service
+	updater        *update.Manager
+	agent          update.Agent
+	poller         *update.Poller
+	ingest         *ingest.Manager
+	auditStore     audit.Store
+	rateLimiter    *RateLimiter
+	maxBodyBytes   int64
+	allowlist      *IPAllowlist
+	configSnapshot map[string]any // redacted runtime config for /admin/config
 }
 
 func NewServer(token string, svc *service.Service, updater *update.Manager, agent update.Agent, poller *update.Poller, ingestManager *ingest.Manager, auditStore audit.Store) *Server {
-	return &Server{token: token, service: svc, updater: updater, agent: agent, poller: poller, ingest: ingestManager, auditStore: auditStore}
+	s := &Server{
+		service:      svc,
+		updater:      updater,
+		agent:        agent,
+		poller:       poller,
+		ingest:       ingestManager,
+		auditStore:   auditStore,
+		rateLimiter:  NewRateLimiter(2, 20), // 2 req/s, burst 20
+		maxBodyBytes: defaultMaxBodyBytes,
+	}
+	s.token.Store(&token)
+	return s
+}
+
+// WithConfigSnapshot attaches a pre-built, redacted config snapshot that is
+// served from /admin/config. Call this after NewServer in main.go.
+func (s *Server) WithConfigSnapshot(snap map[string]any) *Server {
+	s.configSnapshot = snap
+	return s
+}
+
+// WithAllowlist restricts access to IPs matching the provided allowlist.
+// Passing nil (or calling without this method) allows all IPs.
+func (s *Server) WithAllowlist(al *IPAllowlist) *Server {
+	s.allowlist = al
+	return s
+}
+
+// currentToken returns the current bearer token value.
+func (s *Server) currentToken() string {
+	if p := s.token.Load(); p != nil {
+		return *p
+	}
+	return ""
 }
 
 func (s *Server) Routes() http.Handler {
@@ -54,6 +98,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/admin/updates/rollouts/get", s.wrapAuth(s.rolloutGet))
 	mux.HandleFunc("/admin/updates/rollouts/list", s.wrapAuth(s.rolloutList))
 	mux.HandleFunc("/admin/ingest/status", s.wrapAuth(s.ingestStatus))
+	mux.HandleFunc("/admin/config", s.wrapAuth(s.getConfig))
+	mux.HandleFunc("/admin/auth/rotate-token", s.wrapAuth(s.rotateToken))
 
 	mux.HandleFunc("/agent/updates/health", s.wrapAuth(s.agentHealth))
 	mux.HandleFunc("/agent/updates/stage", s.wrapAuth(s.agentStage))
@@ -69,13 +115,35 @@ func (s *Server) wrapAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		// ── IP Allowlist ──────────────────────────────────────────────────
+		if s.allowlist != nil && !s.allowlist.Allows(remoteIP(r)) {
+			s.writeToolError(w, http.StatusForbidden, ErrCodeUnauthorized,
+				"source IP not in allowlist",
+				"contact your Koala administrator to add your IP address")
+			return
+		}
+
+		// ── Rate limiting ─────────────────────────────────────────────────
+		if s.rateLimiter != nil && !s.rateLimiter.Allow(remoteIP(r)) {
+			s.writeToolError(w, http.StatusTooManyRequests, ErrCodeRateLimited,
+				"rate limit exceeded; slow down and retry",
+				"wait 1–2 seconds before retrying")
+			return
+		}
+
+		// ── Auth ──────────────────────────────────────────────────────────
 		auth := r.Header.Get("Authorization")
-		if !strings.HasPrefix(auth, "Bearer ") || strings.TrimPrefix(auth, "Bearer ") != s.token {
+		if !strings.HasPrefix(auth, "Bearer ") || strings.TrimPrefix(auth, "Bearer ") != s.currentToken() {
 			s.writeToolError(w, http.StatusUnauthorized, ErrCodeUnauthorized, "missing or invalid bearer token", "provide a valid Authorization: Bearer <token> header")
 			return
 		}
 
-		// Assign a request ID for log correlation.
+		// ── Body size limit ───────────────────────────────────────────────
+		if r.Body != nil && s.maxBodyBytes > 0 {
+			r.Body = http.MaxBytesReader(w, r.Body, s.maxBodyBytes)
+		}
+
+		// ── Request ID + structured log ───────────────────────────────────
 		reqID := r.Header.Get("X-Request-ID")
 		if reqID == "" {
 			reqID = newRequestID()
@@ -90,6 +158,22 @@ func (s *Server) wrapAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// handleDecodeError inspects a decodeToolRequest error and writes the
+// appropriate HTTP error response. Returns true if an error was written.
+func (s *Server) handleDecodeError(w http.ResponseWriter, err error) bool {
+	if err == nil {
+		return false
+	}
+	if ptle, ok := err.(interface{ IsPayloadTooLarge() bool }); ok && ptle.IsPayloadTooLarge() {
+		s.writeToolError(w, http.StatusRequestEntityTooLarge, ErrCodePayloadTooLarge,
+			fmt.Sprintf("request body exceeds %d byte limit", s.maxBodyBytes),
+			"reduce payload size or split into multiple requests")
+		return true
+	}
+	s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
+	return true
+}
+
 // writeToolError writes a structured JSON error response with the given HTTP status code.
 func (s *Server) writeToolError(w http.ResponseWriter, httpCode int, errCode, explanation, nextAction string) {
 	s.writeJSON(w, httpCode, ToolResponse{
@@ -100,12 +184,19 @@ func (s *Server) writeToolError(w http.ResponseWriter, httpCode int, errCode, ex
 	})
 }
 
+// bodyTooLarge is the sentinel error type from http.MaxBytesReader.
+type bodyTooLargeError interface{ Error() string }
+
 func (s *Server) decodeToolRequest(r *http.Request) (ToolRequest, error) {
 	if r.Method == http.MethodGet {
 		return ToolRequest{Input: map[string]any{}}, nil
 	}
 	var req ToolRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// http.MaxBytesReader wraps its error; check the message directly.
+		if strings.Contains(err.Error(), "http: request body too large") {
+			return ToolRequest{}, &payloadTooLargeErr{}
+		}
 		return ToolRequest{}, err
 	}
 	if req.Input == nil {
@@ -113,6 +204,11 @@ func (s *Server) decodeToolRequest(r *http.Request) (ToolRequest, error) {
 	}
 	return req, nil
 }
+
+type payloadTooLargeErr struct{}
+
+func (e *payloadTooLargeErr) Error() string { return "request body too large" }
+func (e *payloadTooLargeErr) IsPayloadTooLarge() bool { return true }
 
 func (s *Server) writeJSON(w http.ResponseWriter, code int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -153,8 +249,7 @@ func (s *Server) listCameras(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) getZoneState(w http.ResponseWriter, r *http.Request) {
 	req, err := s.decodeToolRequest(r)
-	if err != nil {
-		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
+	if s.handleDecodeError(w, err) {
 		return
 	}
 
@@ -197,8 +292,7 @@ func (s *Server) getZoneState(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) checkPackageAtDoor(w http.ResponseWriter, r *http.Request) {
 	req, err := s.decodeToolRequest(r)
-	if err != nil {
-		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
+	if s.handleDecodeError(w, err) {
 		return
 	}
 	cameraID, _ := readOptionalString(req.Input, "camera_id")
@@ -245,8 +339,7 @@ func (s *Server) checkPackageAtDoor(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) ingestFrame(w http.ResponseWriter, r *http.Request) {
 	req, err := s.decodeToolRequest(r)
-	if err != nil {
-		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
+	if s.handleDecodeError(w, err) {
 		return
 	}
 	cameraID, err := readRequiredString(req.Input, "camera_id")
@@ -314,8 +407,7 @@ func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, err := s.decodeToolRequest(r)
-	if err != nil {
-		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
+	if s.handleDecodeError(w, err) {
 		return
 	}
 	manifest, deviceIDs, err := parseUpdateInput(req.Input)
@@ -343,8 +435,7 @@ func (s *Server) updateStage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, err := s.decodeToolRequest(r)
-	if err != nil {
-		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
+	if s.handleDecodeError(w, err) {
 		return
 	}
 	manifest, deviceIDs, err := parseUpdateInput(req.Input)
@@ -372,8 +463,7 @@ func (s *Server) updateApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, err := s.decodeToolRequest(r)
-	if err != nil {
-		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
+	if s.handleDecodeError(w, err) {
 		return
 	}
 	deviceIDs, err := readDeviceIDs(req.Input)
@@ -401,8 +491,7 @@ func (s *Server) updateRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, err := s.decodeToolRequest(r)
-	if err != nil {
-		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
+	if s.handleDecodeError(w, err) {
 		return
 	}
 	deviceIDs, err := readDeviceIDs(req.Input)
@@ -467,8 +556,7 @@ func (s *Server) updateHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, err := s.decodeToolRequest(r)
-	if err != nil {
-		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
+	if s.handleDecodeError(w, err) {
 		return
 	}
 	category, _ := readOptionalString(req.Input, "category")
@@ -497,8 +585,7 @@ func (s *Server) rolloutStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, err := s.decodeToolRequest(r)
-	if err != nil {
-		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
+	if s.handleDecodeError(w, err) {
 		return
 	}
 	manifest, deviceIDs, err := parseUpdateInput(req.Input)
@@ -562,8 +649,7 @@ func (s *Server) rolloutGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req, err := s.decodeToolRequest(r)
-	if err != nil {
-		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
+	if s.handleDecodeError(w, err) {
 		return
 	}
 	rolloutID, err := readRequiredString(req.Input, "rollout_id")
@@ -688,6 +774,47 @@ func (s *Server) getMetrics(w http.ResponseWriter, _ *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]any{
 		"status":      "ok",
 		"explanation": "runtime metrics snapshot",
+		"data":        snap,
+	})
+}
+
+// rotateToken atomically replaces the bearer token. The caller must present the
+// current valid token in the Authorization header (as with all auth-gated
+// endpoints). The new token is applied immediately with no restart required.
+func (s *Server) rotateToken(w http.ResponseWriter, r *http.Request) {
+	req, err := s.decodeToolRequest(r)
+	if s.handleDecodeError(w, err) {
+		return
+	}
+	newToken, err := readRequiredString(req.Input, "new_token")
+	if err != nil {
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(),
+			"provide new_token in the input object")
+		return
+	}
+	if len(newToken) < 32 {
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput,
+			"new_token must be at least 32 characters",
+			"generate a cryptographically random token of at least 32 characters")
+		return
+	}
+	s.token.Store(&newToken)
+	reqID, _ := w.Header()["X-Request-Id"]
+	log.Printf("service=mcp event=token_rotated request_id=%v", reqID)
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "bearer token rotated; update your client configuration immediately",
+	})
+}
+
+func (s *Server) getConfig(w http.ResponseWriter, _ *http.Request) {
+	snap := s.configSnapshot
+	if snap == nil {
+		snap = map[string]any{"note": "no config snapshot registered"}
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "current runtime configuration snapshot (sensitive fields redacted)",
 		"data":        snap,
 	})
 }

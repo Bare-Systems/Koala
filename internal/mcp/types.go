@@ -12,6 +12,10 @@ const (
 	ErrCodeUnavailable = "unavailable"
 	// ErrCodeInternalError is returned for unexpected server-side failures.
 	ErrCodeInternalError = "internal_error"
+	// ErrCodeRateLimited is returned when the caller exceeds the per-IP request rate.
+	ErrCodeRateLimited = "rate_limited"
+	// ErrCodePayloadTooLarge is returned when the request body exceeds the size limit.
+	ErrCodePayloadTooLarge = "payload_too_large"
 )
 
 // ToolRequest is the JSON body sent to any MCP tool endpoint.

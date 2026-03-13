@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -80,12 +81,18 @@ type Service struct {
 	Filter     *ZoneFilter
 	Metrics    *telemetry.Collector
 
+	// FrameBufferEnabled controls whether raw frame payloads are forwarded to
+	// the inference worker. When false (default), frame_b64 is stripped before
+	// the inference call — metadata-only privacy mode.
+	FrameBufferEnabled bool
+
 	queue       chan FrameTask
 	queueCap    int
 	start       time.Time
 	dropped     atomic.Int64
 	degraded    atomic.Bool
 	lastFailure atomic.Int64
+	wg          sync.WaitGroup // tracks in-flight processTask calls
 }
 
 func New(registry *camera.Registry, aggregator *state.Aggregator, client inference.Client, queueSize int) *Service {
@@ -93,14 +100,15 @@ func New(registry *camera.Registry, aggregator *state.Aggregator, client inferen
 		queueSize = 64
 	}
 	return &Service{
-		Registry:   registry,
-		Aggregator: aggregator,
-		Inference:  client,
-		Filter:     NewZoneFilter(nil),
-		Metrics:    telemetry.New(0),
-		queue:      make(chan FrameTask, queueSize),
-		queueCap:   queueSize,
-		start:      time.Now().UTC(),
+		Registry:           registry,
+		Aggregator:         aggregator,
+		Inference:          client,
+		Filter:             NewZoneFilter(nil),
+		Metrics:            telemetry.New(0),
+		FrameBufferEnabled: false, // metadata-only by default
+		queue:              make(chan FrameTask, queueSize),
+		queueCap:           queueSize,
+		start:              time.Now().UTC(),
 	}
 }
 
@@ -121,6 +129,9 @@ func (s *Service) Submit(task FrameTask) bool {
 	}
 }
 
+// Start launches the background frame processing worker. It returns when ctx
+// is cancelled. Call Drain() afterwards to wait for any in-flight task to
+// complete before exiting.
 func (s *Service) Start(ctx context.Context) {
 	go func() {
 		for {
@@ -128,18 +139,31 @@ func (s *Service) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case task := <-s.queue:
+				s.wg.Add(1)
 				s.processTask(ctx, task)
+				s.wg.Done()
 			}
 		}
 	}()
 }
 
+// Drain blocks until any in-flight processTask call has completed. Call after
+// cancelling the context passed to Start to ensure clean shutdown.
+func (s *Service) Drain() {
+	s.wg.Wait()
+}
+
 func (s *Service) processTask(ctx context.Context, task FrameTask) {
+	// Privacy gate: strip frame payload when metadata-only mode is active.
+	frameB64 := task.FrameB64
+	if !s.FrameBufferEnabled {
+		frameB64 = ""
+	}
 	start := time.Now()
 	resp, err := s.Inference.AnalyzeFrame(ctx, inference.FrameRequest{
 		CameraID: task.CameraID,
 		ZoneID:   task.ZoneID,
-		FrameB64: task.FrameB64,
+		FrameB64: frameB64,
 		Captured: task.Captured,
 	})
 	s.Metrics.RecordInferenceLatency(time.Since(start))

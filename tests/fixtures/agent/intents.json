@@ -1,0 +1,81 @@
+[
+  {
+    "id": "pkg_at_door_default",
+    "intent": "Is there a package at the front door?",
+    "tool": "koala.check_package_at_door",
+    "method": "POST",
+    "path": "/mcp/tools/koala.check_package_at_door",
+    "input": {},
+    "expected_status_set": ["ok", "degraded", "stale"],
+    "expected_data_keys": ["package_present", "confidence", "observed_at"],
+    "required_top_keys": ["status", "explanation", "freshness_seconds", "risk_level", "data"]
+  },
+  {
+    "id": "pkg_at_door_named_camera",
+    "intent": "Check whether a package arrived at cam_front_1.",
+    "tool": "koala.check_package_at_door",
+    "method": "POST",
+    "path": "/mcp/tools/koala.check_package_at_door",
+    "input": {"camera_id": "cam_front_1"},
+    "expected_status_set": ["ok", "degraded", "stale"],
+    "expected_data_keys": ["package_present", "confidence", "observed_at"],
+    "required_top_keys": ["status", "explanation", "freshness_seconds", "risk_level", "data"]
+  },
+  {
+    "id": "zone_state_front_door",
+    "intent": "What entities are currently detected in the front door zone?",
+    "tool": "koala.get_zone_state",
+    "method": "POST",
+    "path": "/mcp/tools/koala.get_zone_state",
+    "input": {"zone_id": "front_door"},
+    "expected_status_set": ["ok", "degraded", "stale"],
+    "expected_data_keys": ["zone_id", "observed_at", "entities"],
+    "required_top_keys": ["status", "explanation", "freshness_seconds", "risk_level", "data"]
+  },
+  {
+    "id": "system_health",
+    "intent": "What is the overall system health status?",
+    "tool": "koala.get_system_health",
+    "method": "POST",
+    "path": "/mcp/tools/koala.get_system_health",
+    "input": {},
+    "expected_status_set": ["ok", "degraded"],
+    "expected_data_keys": [],
+    "required_top_keys": ["status", "explanation", "data"]
+  },
+  {
+    "id": "list_cameras",
+    "intent": "List all cameras and their current statuses.",
+    "tool": "koala.list_cameras",
+    "method": "POST",
+    "path": "/mcp/tools/koala.list_cameras",
+    "input": {},
+    "expected_status_set": ["ok", "degraded"],
+    "expected_data_keys": ["cameras"],
+    "required_top_keys": ["status", "explanation", "data"]
+  },
+  {
+    "id": "zone_state_missing_zone_id",
+    "intent": "Get zone state without specifying a zone_id (agent error path).",
+    "tool": "koala.get_zone_state",
+    "method": "POST",
+    "path": "/mcp/tools/koala.get_zone_state",
+    "input": {},
+    "expected_status_set": ["error"],
+    "expected_data_keys": [],
+    "required_top_keys": ["status", "explanation", "error_code", "next_action"],
+    "expected_http_status": 400
+  },
+  {
+    "id": "pkg_at_door_bad_camera",
+    "intent": "Check package at a camera that does not exist (agent error path).",
+    "tool": "koala.check_package_at_door",
+    "method": "POST",
+    "path": "/mcp/tools/koala.check_package_at_door",
+    "input": {"camera_id": "cam_does_not_exist"},
+    "expected_status_set": ["error"],
+    "expected_data_keys": [],
+    "required_top_keys": ["status", "explanation", "error_code"],
+    "expected_http_status": 400
+  }
+]
