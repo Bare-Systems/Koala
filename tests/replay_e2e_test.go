@@ -150,7 +150,7 @@ func runReplayCase(t *testing.T, tc replayCase) (predPkg bool, predPerson bool, 
 	defer cancel()
 	svc.Start(ctx)
 
-	handler := mcp.NewServer("test-token", svc, nil, nil, nil, nil, nil).Routes()
+	handler := mcp.NewServer("test-token", svc, nil, nil, nil, nil, nil).WithRateLimiter(nil).Routes()
 
 	frameB64 := base64.StdEncoding.EncodeToString([]byte(tc.FrameTag))
 	ingestReq := map[string]any{

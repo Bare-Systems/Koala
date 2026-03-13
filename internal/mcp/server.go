@@ -68,6 +68,13 @@ func (s *Server) WithAllowlist(al *IPAllowlist) *Server {
 	return s
 }
 
+// WithRateLimiter replaces the default per-IP rate limiter. Pass nil to
+// disable rate limiting entirely (useful in test environments).
+func (s *Server) WithRateLimiter(rl *RateLimiter) *Server {
+	s.rateLimiter = rl
+	return s
+}
+
 // currentToken returns the current bearer token value.
 func (s *Server) currentToken() string {
 	if p := s.token.Load(); p != nil {
