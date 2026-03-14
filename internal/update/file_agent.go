@@ -188,6 +188,18 @@ func (a *FileAgent) Apply(_ context.Context) error {
 		return fmt.Errorf("no staged update")
 	}
 
+	// Run pre-apply checks: staged files present, disk space available.
+	preResult := RunPreflight(a.stagingDir, a.activeDir, *a.staged)
+	if !preResult.OK {
+		for _, check := range preResult.Checks {
+			if !check.Passed {
+				a.status = "failed"
+				a.lastError = "preflight: " + check.Name + ": " + check.Message
+				return fmt.Errorf("preflight check %q failed: %s", check.Name, check.Message)
+			}
+		}
+	}
+
 	stagedArtifact := filepath.Join(a.stagingDir, a.staged.Version, "artifact.bin")
 	payload, err := os.ReadFile(stagedArtifact)
 	if err != nil {

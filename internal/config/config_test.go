@@ -274,6 +274,91 @@ func TestValidateZoneConfidenceThresholdOutOfRange(t *testing.T) {
 	}
 }
 
+// ─── Worker protocol tests ────────────────────────────────────────────────────
+
+func TestWorkerProtocol_GRPCExplicit_RequiresGRPCAddr(t *testing.T) {
+	cfg := Config{
+		MCPToken: "token",
+		Worker:   WorkerConfig{Protocol: "grpc"}, // no GRPCAddr
+		Cameras:  []CameraConfig{frontDoorCamera},
+	}
+	cfg.applyDefaults()
+	// applyDefaults sets default grpc_addr, so this should still pass.
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("grpc with default addr should be valid: %v", err)
+	}
+	if cfg.Worker.GRPCAddr == "" {
+		t.Fatal("expected default GRPCAddr to be set")
+	}
+}
+
+func TestWorkerProtocol_GRPCExplicit_CustomAddr(t *testing.T) {
+	cfg := Config{
+		MCPToken: "token",
+		Worker:   WorkerConfig{Protocol: "grpc", GRPCAddr: "worker.local:50051"},
+		Cameras:  []CameraConfig{frontDoorCamera},
+	}
+	cfg.applyDefaults()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("explicit grpc+addr should be valid: %v", err)
+	}
+}
+
+func TestWorkerProtocol_HTTPExplicit_RequiresURL(t *testing.T) {
+	cfg := Config{
+		MCPToken: "token",
+		Worker:   WorkerConfig{Protocol: "http"}, // no URL
+		Cameras:  []CameraConfig{frontDoorCamera},
+	}
+	cfg.applyDefaults()
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for http protocol without url")
+	}
+}
+
+func TestWorkerProtocol_AutoDetect_URLOnly_BecomesHTTP(t *testing.T) {
+	// Existing config style: only worker.url set — must auto-detect as "http".
+	cfg := Config{
+		MCPToken: "token",
+		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Cameras:  []CameraConfig{frontDoorCamera},
+	}
+	cfg.applyDefaults()
+	if cfg.Worker.Protocol != "http" {
+		t.Fatalf("expected auto-detected protocol=http, got %q", cfg.Worker.Protocol)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("url-only config must still validate: %v", err)
+	}
+}
+
+func TestWorkerProtocol_AutoDetect_GRPCAddrOnly_BecomesGRPC(t *testing.T) {
+	cfg := Config{
+		MCPToken: "token",
+		Worker:   WorkerConfig{GRPCAddr: "worker:50051"},
+		Cameras:  []CameraConfig{frontDoorCamera},
+	}
+	cfg.applyDefaults()
+	if cfg.Worker.Protocol != "grpc" {
+		t.Fatalf("expected auto-detected protocol=grpc, got %q", cfg.Worker.Protocol)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("grpc_addr-only config must validate: %v", err)
+	}
+}
+
+func TestWorkerProtocol_Unknown_FailsValidation(t *testing.T) {
+	cfg := Config{
+		MCPToken: "token",
+		Worker:   WorkerConfig{Protocol: "websocket", URL: "ws://worker"},
+		Cameras:  []CameraConfig{frontDoorCamera},
+	}
+	cfg.applyDefaults()
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for unknown protocol")
+	}
+}
+
 func TestValidateValidWithZonesAndCameras(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",

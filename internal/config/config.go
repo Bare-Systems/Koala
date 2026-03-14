@@ -73,11 +73,19 @@ type UpdateConfig struct {
 }
 
 type RuntimeConfig struct {
-	QueueSize             int    `yaml:"queue_size"`
-	FreshnessWindow       int    `yaml:"freshness_window_seconds"`
-	EnableStreamWorkers   bool   `yaml:"enable_stream_workers"`
-	StreamSampleFPS       int    `yaml:"stream_sample_fps"`
-	StreamCaptureTimeoutS int    `yaml:"stream_capture_timeout_seconds"`
+	QueueSize       int `yaml:"queue_size"`
+	FreshnessWindow int `yaml:"freshness_window_seconds"`
+	// MinDetections is the temporal smoothing threshold for the state aggregator.
+	// An entity is declared present only when at least this many detections exist
+	// in the freshness window. 0 (default) disables smoothing.
+	MinDetections int `yaml:"min_detections"`
+	// ConfidenceThreshold is the global fallback minimum detection confidence.
+	// Applied when no per-camera or per-zone threshold is configured.
+	// 0 disables the global threshold (default). Valid range: 0–1.
+	ConfidenceThreshold   float64 `yaml:"confidence_threshold"`
+	EnableStreamWorkers   bool    `yaml:"enable_stream_workers"`
+	StreamSampleFPS       int     `yaml:"stream_sample_fps"`
+	StreamCaptureTimeoutS int     `yaml:"stream_capture_timeout_seconds"`
 	// CapabilityCachePath is the path to the JSON file used to persist
 	// last-known camera probe results across restarts. Empty = no caching.
 	CapabilityCachePath string `yaml:"capability_cache_path"`
@@ -130,6 +138,19 @@ func (c *Config) applyDefaults() {
 	if c.ListenAddr == "" {
 		c.ListenAddr = ":8080"
 	}
+	// Auto-detect worker protocol when not explicitly set.
+	// Existing configs that only set worker.url keep working as "http".
+	if c.Worker.Protocol == "" {
+		if c.Worker.GRPCAddr != "" {
+			c.Worker.Protocol = "grpc"
+		} else {
+			c.Worker.Protocol = "http"
+		}
+	}
+	// Default gRPC address when protocol is grpc and none was specified.
+	if c.Worker.Protocol == "grpc" && c.Worker.GRPCAddr == "" {
+		c.Worker.GRPCAddr = "localhost:50051"
+	}
 	if c.Runtime.QueueSize <= 0 {
 		c.Runtime.QueueSize = 64
 	}
@@ -175,8 +196,23 @@ func (c Config) Validate() error {
 	if c.MCPToken == "" {
 		return fmt.Errorf("mcp_token is required")
 	}
-	if c.Worker.URL == "" {
-		return fmt.Errorf("worker.url is required")
+	if c.Runtime.MinDetections < 0 {
+		return fmt.Errorf("runtime.min_detections must be >= 0")
+	}
+	if c.Runtime.ConfidenceThreshold < 0 || c.Runtime.ConfidenceThreshold > 1 {
+		return fmt.Errorf("runtime.confidence_threshold must be between 0 and 1")
+	}
+	switch c.Worker.Protocol {
+	case "grpc":
+		if c.Worker.GRPCAddr == "" {
+			return fmt.Errorf("worker.grpc_addr is required when worker.protocol=grpc")
+		}
+	case "http":
+		if c.Worker.URL == "" {
+			return fmt.Errorf("worker.url is required when worker.protocol=http")
+		}
+	default:
+		return fmt.Errorf("worker.protocol must be \"grpc\" or \"http\", got %q", c.Worker.Protocol)
 	}
 	if len(c.Cameras) == 0 {
 		return fmt.Errorf("at least one camera is required")

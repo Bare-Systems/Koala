@@ -58,6 +58,7 @@ type Manager struct {
 	orchestratorVersion string
 	workerVersion       string
 	executor            Executor
+	store               DeviceStore // optional; nil = in-memory only
 	devices             map[string]Device
 	staged              map[string]Manifest
 	rollouts            map[string]Rollout
@@ -94,6 +95,85 @@ func NewManager(orchestratorVersion string, workerVersion string, localDeviceID 
 	}
 }
 
+// WithStore attaches a persistent backing store to the Manager and immediately
+// flushes the current in-memory state to it.  Call LoadFromStore afterwards to
+// restore previously persisted state on top of the initial in-memory state.
+func (m *Manager) WithStore(s DeviceStore) *Manager {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.store = s
+	for _, d := range m.devices {
+		_ = s.UpsertDevice(d)
+	}
+	for id, manifest := range m.staged {
+		_ = s.SetStagedManifest(id, manifest)
+	}
+	for _, r := range m.rollouts {
+		_ = s.UpsertRollout(r)
+	}
+	return m
+}
+
+// LoadFromStore restores Manager state from the attached DeviceStore.
+// Devices and rollouts in the store overwrite in-memory state.  Call this
+// after WithStore() during startup to prime the manager with persisted state.
+func (m *Manager) LoadFromStore() {
+	if m.store == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, d := range m.store.ListDevices() {
+		m.devices[d.ID] = d
+		if manifest, ok := m.store.GetStagedManifest(d.ID); ok {
+			m.staged[d.ID] = manifest
+		}
+	}
+	for _, r := range m.store.ListRollouts() {
+		m.rollouts[r.ID] = r
+	}
+}
+
+// persistDevice writes d to the backing store when one is configured.
+// Must be called with m.mu held (any write lock).
+func (m *Manager) persistDevice(d Device) {
+	if m.store != nil {
+		_ = m.store.UpsertDevice(d)
+	}
+}
+
+// persistStagedManifest writes the staged manifest to the backing store.
+// Must be called with m.mu held.
+func (m *Manager) persistStagedManifest(deviceID string, manifest Manifest) {
+	if m.store != nil {
+		_ = m.store.SetStagedManifest(deviceID, manifest)
+	}
+}
+
+// clearPersistedStaged removes the staged manifest from the backing store.
+// Must be called with m.mu held.
+func (m *Manager) clearPersistedStaged(deviceID string) {
+	if m.store != nil {
+		_ = m.store.ClearStagedManifest(deviceID)
+	}
+}
+
+// DeregisterDevice removes a device from the manager's fleet.
+// The local device (the first device registered in NewManager) cannot be removed.
+func (m *Manager) DeregisterDevice(deviceID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.devices[deviceID]; !ok {
+		return fmt.Errorf("unknown device_id: %s", deviceID)
+	}
+	delete(m.devices, deviceID)
+	delete(m.staged, deviceID)
+	if m.store != nil {
+		_ = m.store.DeleteDevice(deviceID)
+	}
+	return nil
+}
+
 func (m *Manager) RegisterDevice(deviceID string, address string, currentVersion string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -103,13 +183,15 @@ func (m *Manager) RegisterDevice(deviceID string, address string, currentVersion
 	if currentVersion == "" {
 		currentVersion = "unknown"
 	}
-	m.devices[deviceID] = Device{
+	d := Device{
 		ID:             deviceID,
 		Address:        address,
 		CurrentVersion: currentVersion,
 		State:          StateIdle,
 		UpdatedAt:      time.Now().UTC(),
 	}
+	m.devices[deviceID] = d
+	m.persistDevice(d)
 }
 
 func (m *Manager) Status() []Device {
@@ -206,6 +288,8 @@ func (m *Manager) Stage(manifest Manifest, deviceIDs []string) ([]Device, error)
 		current.UpdatedAt = time.Now().UTC()
 		m.devices[d.ID] = current
 		m.staged[d.ID] = manifest
+		m.persistDevice(current)
+		m.persistStagedManifest(d.ID, manifest)
 		m.mu.Unlock()
 	}
 	return m.Status(), nil
@@ -256,6 +340,8 @@ func (m *Manager) Apply(deviceIDs []string) ([]Device, error) {
 		current.UpdatedAt = time.Now().UTC()
 		m.devices[d.ID] = current
 		delete(m.staged, d.ID)
+		m.persistDevice(current)
+		m.clearPersistedStaged(d.ID)
 		m.mu.Unlock()
 	}
 	return m.Status(), nil
@@ -301,6 +387,8 @@ func (m *Manager) Rollback(deviceIDs []string, reason string) ([]Device, error) 
 		current.UpdatedAt = time.Now().UTC()
 		m.devices[d.ID] = current
 		delete(m.staged, d.ID)
+		m.persistDevice(current)
+		m.clearPersistedStaged(d.ID)
 		m.mu.Unlock()
 	}
 	return m.Status(), nil

@@ -12,6 +12,14 @@ Build a local-first, privacy-preserving home security platform that gives AI age
 4. Progressive hardening: correctness first, then performance, then resilience.
 5. Every feature ships with tests and MCP contract checks.
 
+## Portfolio Alignment (Iteration 3)
+
+This section tracks only the Koala items assigned in `PORTFOLIO-PRIORITY.md`.
+
+- [ ] Package-at-door and zone-state contract reliability
+- [x] Ingest health/status exposure in tool payloads
+- [ ] Action risk classification hooks for BearClaw policy enforcement
+
 ## Current State (as of March 6, 2026)
 
 Implemented scaffold:

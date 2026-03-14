@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -107,6 +108,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/admin/ingest/status", s.wrapAuth(s.ingestStatus))
 	mux.HandleFunc("/admin/config", s.wrapAuth(s.getConfig))
 	mux.HandleFunc("/admin/auth/rotate-token", s.wrapAuth(s.rotateToken))
+
+	// Fleet device management.
+	mux.HandleFunc("/admin/fleet/devices/register", s.wrapAuth(s.fleetRegisterDevice))
+	mux.HandleFunc("/admin/fleet/devices/list", s.wrapAuth(s.fleetListDevices))
+	mux.HandleFunc("/admin/fleet/devices/deregister", s.wrapAuth(s.fleetDeregisterDevice))
 
 	mux.HandleFunc("/agent/updates/health", s.wrapAuth(s.agentHealth))
 	mux.HandleFunc("/agent/updates/stage", s.wrapAuth(s.agentStage))
@@ -462,6 +468,13 @@ func (s *Server) updateStage(w http.ResponseWriter, r *http.Request) {
 			"devices": devices,
 		},
 	})
+	s.recordAuditEvent(r, audit.Event{
+		Category:  "update",
+		EventType: "update_staged",
+		Severity:  "info",
+		Message:   "update staged for devices",
+		Payload:   map[string]any{"version": manifest.Version, "device_count": len(devices)},
+	})
 }
 
 func (s *Server) updateApply(w http.ResponseWriter, r *http.Request) {
@@ -489,6 +502,13 @@ func (s *Server) updateApply(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]any{
 			"devices": devices,
 		},
+	})
+	s.recordAuditEvent(r, audit.Event{
+		Category:  "update",
+		EventType: "update_applied",
+		Severity:  "info",
+		Message:   "update applied to devices",
+		Payload:   map[string]any{"device_count": len(devices)},
 	})
 }
 
@@ -518,6 +538,13 @@ func (s *Server) updateRollback(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]any{
 			"devices": devices,
 		},
+	})
+	s.recordAuditEvent(r, audit.Event{
+		Category:  "update",
+		EventType: "update_rolled_back",
+		Severity:  "info",
+		Message:   "update rolled back for devices",
+		Payload:   map[string]any{"reason": reason, "device_count": len(devices)},
 	})
 }
 
@@ -741,8 +768,27 @@ func (s *Server) agentApply(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
 		"status":      "ok",
-		"explanation": "agent applied update",
+		"explanation": "agent applied update; watchdog monitoring health",
 	})
+	// Launch a background watchdog: polls agent health and auto-rolls back if
+	// the agent does not reach "healthy" within two minutes.
+	go func() {
+		result := update.Watch(context.Background(), s.agent, 2*time.Minute, 5*time.Second, true)
+		if result.RollbackTriggered && s.auditStore != nil {
+			_ = s.auditStore.Record(context.Background(), audit.Event{
+				Category:  "update",
+				EventType: "watchdog_rollback",
+				Severity:  "warning",
+				Message:   "watchdog triggered automatic rollback after apply",
+				CreatedAt: time.Now().UTC().Format(time.RFC3339),
+				Payload: map[string]any{
+					"status":      result.Status,
+					"check_count": result.CheckCount,
+					"elapsed_ms":  result.Elapsed.Milliseconds(),
+				},
+			})
+		}
+	}()
 }
 
 func (s *Server) agentRollback(w http.ResponseWriter, r *http.Request) {
@@ -761,6 +807,77 @@ func (s *Server) agentRollback(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]any{
 		"status":      "ok",
 		"explanation": "agent rolled back update",
+	})
+}
+
+// ─── Fleet device management endpoints ────────────────────────────────────────
+
+func (s *Server) fleetRegisterDevice(w http.ResponseWriter, r *http.Request) {
+	if s.updater == nil {
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "updates are not configured", "enable update.enabled in the server config")
+		return
+	}
+	req, err := s.decodeToolRequest(r)
+	if s.handleDecodeError(w, err) {
+		return
+	}
+	deviceID, err := readRequiredString(req.Input, "device_id")
+	if err != nil {
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "provide device_id in the input object")
+		return
+	}
+	address, _ := readOptionalString(req.Input, "address")
+	currentVersion, _ := readOptionalString(req.Input, "current_version")
+	s.updater.RegisterDevice(deviceID, address, currentVersion)
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "device registered in fleet",
+		"data": map[string]any{
+			"device_id": deviceID,
+		},
+	})
+}
+
+func (s *Server) fleetListDevices(w http.ResponseWriter, _ *http.Request) {
+	if s.updater == nil {
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "updates are not configured", "enable update.enabled in the server config")
+		return
+	}
+	devices := s.updater.Status()
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "fleet device list",
+		"data": map[string]any{
+			"devices": devices,
+			"count":   len(devices),
+		},
+	})
+}
+
+func (s *Server) fleetDeregisterDevice(w http.ResponseWriter, r *http.Request) {
+	if s.updater == nil {
+		s.writeToolError(w, http.StatusNotImplemented, ErrCodeUnavailable, "updates are not configured", "enable update.enabled in the server config")
+		return
+	}
+	req, err := s.decodeToolRequest(r)
+	if s.handleDecodeError(w, err) {
+		return
+	}
+	deviceID, err := readRequiredString(req.Input, "device_id")
+	if err != nil {
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "provide device_id in the input object")
+		return
+	}
+	if err := s.updater.DeregisterDevice(deviceID); err != nil {
+		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "use /admin/fleet/devices/list to verify the device_id")
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "device deregistered from fleet",
+		"data": map[string]any{
+			"device_id": deviceID,
+		},
 	})
 }
 

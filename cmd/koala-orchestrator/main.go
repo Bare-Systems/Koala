@@ -32,30 +32,38 @@ func main() {
 	}
 
 	registry := camera.NewRegistry(toCameras(cfg))
+
+	// Prime the registry with last-known probe results before this session's
+	// live probes run. Any camera that gets a fresh probe result will overwrite
+	// the cached value; cameras that fail to probe this session keep their
+	// cached status so agents see a useful state rather than StatusUnknown.
+	var capCache *camera.CapabilityCache
+	if cfg.Runtime.CapabilityCachePath != "" {
+		var cacheErr error
+		capCache, cacheErr = camera.LoadCapabilityCache(cfg.Runtime.CapabilityCachePath)
+		if cacheErr != nil {
+			log.Printf("camera capability cache load failed (continuing without cache): %v", cacheErr)
+		} else {
+			capCache.Warm(registry)
+			log.Printf("startup: capability cache loaded path=%s", cfg.Runtime.CapabilityCachePath)
+		}
+	}
+
 	prober := camera.Prober{Timeout: 2 * time.Second}
 	for _, c := range registry.List() {
-		if c.RTSPURL == "" {
-			result := prober.Probe(context.Background(), c)
-			registry.SetCapability(c.ID, result.Capability)
-			registry.SetStatus(c.ID, result.Status)
-			if result.DiscoveredRTSPURL != "" {
-				registry.SetRTSPURL(c.ID, result.DiscoveredRTSPURL)
-				log.Printf("camera rtsp discovered camera=%s url=%s", c.ID, result.DiscoveredRTSPURL)
-			}
-			if result.Error != "" {
-				log.Printf("camera probe failed camera=%s err=%s", c.ID, result.Error)
-			}
-			continue
-		}
 		result := prober.Probe(context.Background(), c)
 		registry.SetCapability(c.ID, result.Capability)
 		registry.SetStatus(c.ID, result.Status)
 		if result.DiscoveredRTSPURL != "" {
 			registry.SetRTSPURL(c.ID, result.DiscoveredRTSPURL)
-			log.Printf("camera rtsp discovered camera=%s url=%s", c.ID, result.DiscoveredRTSPURL)
 		}
-		if result.Error != "" {
-			log.Printf("camera probe failed camera=%s err=%s", c.ID, result.Error)
+	}
+	logDiscoveryReport(registry)
+
+	// Persist fresh probe results for next startup.
+	if capCache != nil {
+		if err := capCache.Snapshot(registry); err != nil {
+			log.Printf("camera capability cache snapshot failed: %v", err)
 		}
 	}
 
@@ -63,10 +71,38 @@ func main() {
 	if cfg.Privacy.MetadataRetentionSeconds > 0 {
 		freshnessWindow = time.Duration(cfg.Privacy.MetadataRetentionSeconds) * time.Second
 	}
-	aggregator := state.NewAggregator(freshnessWindow)
-	client := inference.NewHTTPClient(cfg.Worker.URL)
-	svc := service.New(registry, aggregator, client, cfg.Runtime.QueueSize)
-	svc.Filter = service.NewZoneFilter(toZoneFilters(cfg))
+	aggregator := state.NewAggregator(freshnessWindow, cfg.Runtime.MinDetections)
+
+	var inferenceClient inference.Client
+	switch cfg.Worker.Protocol {
+	case "grpc":
+		grpcClient, grpcErr := inference.NewGRPCClient(cfg.Worker.GRPCAddr, 5, 15*time.Second)
+		if grpcErr != nil {
+			log.Fatalf("init grpc inference client addr=%s: %v", cfg.Worker.GRPCAddr, grpcErr)
+		}
+		defer grpcClient.Close()
+		inferenceClient = grpcClient
+		log.Printf("startup: inference transport=grpc addr=%s", cfg.Worker.GRPCAddr)
+	default: // "http"
+		inferenceClient = inference.NewHTTPClient(cfg.Worker.URL)
+		log.Printf("startup: inference transport=http url=%s", cfg.Worker.URL)
+	}
+	svc := service.New(registry, aggregator, inferenceClient, cfg.Runtime.QueueSize)
+	zoneFilter := service.NewZoneFilter(toZoneFilters(cfg))
+	// Wire per-camera confidence thresholds (priority over zone/global).
+	cameraThresholds := make(map[string]float64)
+	for _, c := range cfg.Cameras {
+		if c.ConfidenceThreshold > 0 {
+			cameraThresholds[c.ID] = c.ConfidenceThreshold
+		}
+	}
+	if len(cameraThresholds) > 0 {
+		zoneFilter = zoneFilter.WithCameraThresholds(cameraThresholds)
+	}
+	if cfg.Runtime.ConfidenceThreshold > 0 {
+		zoneFilter = zoneFilter.WithGlobalThreshold(cfg.Runtime.ConfidenceThreshold)
+	}
+	svc.Filter = zoneFilter
 	svc.FrameBufferEnabled = cfg.Privacy.FrameBufferEnabled
 	if !cfg.Privacy.FrameBufferEnabled {
 		log.Printf("startup: privacy=metadata-only frame_buffer_enabled=false")
@@ -223,6 +259,23 @@ func main() {
 	log.Printf("shutdown: complete")
 }
 
+// logDiscoveryReport emits a structured startup summary of camera probe results.
+func logDiscoveryReport(reg *camera.Registry) {
+	cameras := reg.List()
+	log.Printf("startup: discovery report cameras=%d", len(cameras))
+	for _, c := range cameras {
+		source := c.Capability.SelectedSource
+		if source == "" {
+			source = "none"
+		}
+		if c.Capability.LastError != "" {
+			log.Printf("startup: camera id=%s status=%s source=%s error=%q", c.ID, c.Status, source, c.Capability.LastError)
+		} else {
+			log.Printf("startup: camera id=%s status=%s source=%s", c.ID, c.Status, source)
+		}
+	}
+}
+
 // buildConfigSnapshot returns a sanitised view of cfg for the /admin/config
 // endpoint. Sensitive fields (tokens, keys, passwords) are redacted.
 func buildConfigSnapshot(cfg config.Config) map[string]any {
@@ -256,11 +309,15 @@ func buildConfigSnapshot(cfg config.Config) map[string]any {
 		"runtime": map[string]any{
 			"freshness_window_s":      cfg.Runtime.FreshnessWindow,
 			"queue_size":              cfg.Runtime.QueueSize,
+			"min_detections":          cfg.Runtime.MinDetections,
+			"confidence_threshold":    cfg.Runtime.ConfidenceThreshold,
 			"enable_stream_workers":   cfg.Runtime.EnableStreamWorkers,
 			"stream_sample_fps":       cfg.Runtime.StreamSampleFPS,
 		},
 		"worker": map[string]any{
-			"url": cfg.Worker.URL,
+			"protocol":     cfg.Worker.Protocol,
+			"url_set":      cfg.Worker.URL != "",
+			"grpc_addr_set": cfg.Worker.GRPCAddr != "",
 		},
 		"update": map[string]any{
 			"enabled":         cfg.Update.Enabled,
@@ -285,8 +342,9 @@ func toZoneFilters(cfg config.Config) map[string]service.ZonePolygonConfig {
 			poly[i] = zone.Point{X: pt[0], Y: pt[1]}
 		}
 		out[z.ID] = service.ZonePolygonConfig{
-			Polygon:    poly,
-			MinOverlap: z.MinBBoxOverlap,
+			Polygon:             poly,
+			MinOverlap:          z.MinBBoxOverlap,
+			ConfidenceThreshold: z.ConfidenceThreshold,
 		}
 	}
 	return out

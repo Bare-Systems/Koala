@@ -60,7 +60,7 @@ func TestZoneFilterPassesWhenNoPoly(t *testing.T) {
 
 func TestZoneFilterRejectsOutOfZone(t *testing.T) {
 	// Zone covers only bottom-right quarter.
-	poly := zone.Polygon{{0.5, 0.5}, {1, 0.5}, {1, 1}, {0.5, 1}}
+	poly := zone.Polygon{{X: 0.5, Y: 0.5}, {X: 1, Y: 0.5}, {X: 1, Y: 1}, {X: 0.5, Y: 1}}
 	f := NewZoneFilter(map[string]ZonePolygonConfig{
 		"z1": {Polygon: poly, MinOverlap: 0.5},
 	})
@@ -74,7 +74,7 @@ func TestZoneFilterRejectsOutOfZone(t *testing.T) {
 
 func TestZoneFilterAcceptsInZone(t *testing.T) {
 	// Zone covers full frame.
-	poly := zone.Polygon{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+	poly := zone.Polygon{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 1, Y: 1}, {X: 0, Y: 1}}
 	f := NewZoneFilter(map[string]ZonePolygonConfig{
 		"z1": {Polygon: poly, MinOverlap: 0.5},
 	})
@@ -82,6 +82,66 @@ func TestZoneFilterAcceptsInZone(t *testing.T) {
 	got := f.Filter(dets)
 	if len(got) != 1 {
 		t.Fatalf("in-zone detection should pass")
+	}
+}
+
+func TestZoneFilter_ZoneConfidenceThreshold_FiltersLow(t *testing.T) {
+	f := NewZoneFilter(map[string]ZonePolygonConfig{
+		"z1": {ConfidenceThreshold: 0.8},
+	})
+	dets := []inference.Detection{
+		{ZoneID: "z1", Label: "package", Confidence: 0.79},
+	}
+	if got := f.Filter(dets); len(got) != 0 {
+		t.Fatalf("expected low-confidence detection to be filtered, got %d", len(got))
+	}
+}
+
+func TestZoneFilter_ZoneConfidenceThreshold_PassesHigh(t *testing.T) {
+	f := NewZoneFilter(map[string]ZonePolygonConfig{
+		"z1": {ConfidenceThreshold: 0.8},
+	})
+	dets := []inference.Detection{
+		{ZoneID: "z1", Label: "package", Confidence: 0.85},
+	}
+	if got := f.Filter(dets); len(got) != 1 {
+		t.Fatalf("expected high-confidence detection to pass, got %d", len(got))
+	}
+}
+
+func TestZoneFilter_CameraThreshold_OverridesZone(t *testing.T) {
+	// Zone threshold is 0.5 (lenient); camera threshold is 0.9 (strict).
+	// Detection at 0.7 should be rejected by the camera threshold.
+	f := NewZoneFilter(map[string]ZonePolygonConfig{
+		"z1": {ConfidenceThreshold: 0.5},
+	}).WithCameraThresholds(map[string]float64{"cam1": 0.9})
+	dets := []inference.Detection{
+		{CameraID: "cam1", ZoneID: "z1", Label: "package", Confidence: 0.7},
+	}
+	if got := f.Filter(dets); len(got) != 0 {
+		t.Fatalf("camera threshold should override zone threshold and filter 0.7 confidence")
+	}
+}
+
+func TestZoneFilter_GlobalThreshold_Fallback(t *testing.T) {
+	// No zone config for this detection; global threshold should apply.
+	f := NewZoneFilter(nil).WithGlobalThreshold(0.6)
+	pass := inference.Detection{ZoneID: "z1", Label: "package", Confidence: 0.65}
+	fail := inference.Detection{ZoneID: "z1", Label: "person", Confidence: 0.55}
+	got := f.Filter([]inference.Detection{pass, fail})
+	if len(got) != 1 || got[0].Label != "package" {
+		t.Fatalf("expected only high-confidence detection to pass global threshold, got %v", got)
+	}
+}
+
+func TestZoneFilter_NoThreshold_PassesAll(t *testing.T) {
+	// When no thresholds are configured, confidence should not be checked.
+	f := NewZoneFilter(nil)
+	dets := []inference.Detection{
+		{ZoneID: "z1", Label: "package", Confidence: 0.01},
+	}
+	if got := f.Filter(dets); len(got) != 1 {
+		t.Fatalf("expected detection to pass when no threshold configured")
 	}
 }
 

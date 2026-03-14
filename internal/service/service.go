@@ -18,14 +18,18 @@ const defaultMinBBoxOverlap = 0.3
 
 // ZonePolygonConfig carries the polygon filter settings for one zone.
 type ZonePolygonConfig struct {
-	Polygon    zone.Polygon
-	MinOverlap float64 // 0 → defaultMinBBoxOverlap
+	Polygon             zone.Polygon
+	MinOverlap          float64 // 0 → defaultMinBBoxOverlap
+	ConfidenceThreshold float64 // 0 → no zone-level threshold
 }
 
 // ZoneFilter holds per-zone polygon configs and filters raw detections.
 // Zones without a polygon config pass all detections through.
+// Confidence thresholds are applied with this priority: camera > zone > global.
 type ZoneFilter struct {
-	zones map[string]ZonePolygonConfig
+	zones            map[string]ZonePolygonConfig
+	cameraThresholds map[string]float64 // camera_id → min confidence; 0 = skip
+	globalThreshold  float64            // fallback threshold when no camera/zone threshold set
 }
 
 // NewZoneFilter builds a ZoneFilter from a map of zone ID → polygon config.
@@ -37,14 +41,49 @@ func NewZoneFilter(zones map[string]ZonePolygonConfig) *ZoneFilter {
 	return &ZoneFilter{zones: zones}
 }
 
+// WithCameraThresholds sets per-camera minimum confidence thresholds.
+// Camera thresholds take priority over zone and global thresholds.
+func (f *ZoneFilter) WithCameraThresholds(thresholds map[string]float64) *ZoneFilter {
+	f.cameraThresholds = thresholds
+	return f
+}
+
+// WithGlobalThreshold sets the fallback confidence threshold applied when no
+// camera or zone threshold is configured for a detection.
+func (f *ZoneFilter) WithGlobalThreshold(threshold float64) *ZoneFilter {
+	f.globalThreshold = threshold
+	return f
+}
+
 func (f *ZoneFilter) Filter(detections []inference.Detection) []inference.Detection {
-	if f == nil || len(f.zones) == 0 {
+	if f == nil {
+		return detections
+	}
+	hasZones := len(f.zones) > 0
+	hasThresholds := len(f.cameraThresholds) > 0 || f.globalThreshold > 0
+	if !hasZones && !hasThresholds {
 		return detections
 	}
 	out := detections[:0:0] // zero-length slice backed by same array
 	for _, d := range detections {
-		cfg, ok := f.zones[d.ZoneID]
-		if !ok || len(cfg.Polygon) == 0 {
+		// Resolve effective confidence threshold.
+		// Priority: camera threshold > zone threshold > global threshold.
+		threshold := 0.0
+		if ct, ok := f.cameraThresholds[d.CameraID]; ok && ct > 0 {
+			threshold = ct
+		}
+		cfg, hasCfg := f.zones[d.ZoneID]
+		if threshold == 0 && hasCfg && cfg.ConfidenceThreshold > 0 {
+			threshold = cfg.ConfidenceThreshold
+		}
+		if threshold == 0 {
+			threshold = f.globalThreshold
+		}
+		if threshold > 0 && d.Confidence < threshold {
+			continue
+		}
+		// Polygon gate: zones without a polygon pass all surviving detections.
+		if !hasCfg || len(cfg.Polygon) == 0 {
 			out = append(out, d)
 			continue
 		}

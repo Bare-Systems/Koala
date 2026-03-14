@@ -122,6 +122,9 @@ func (m *Manager) StartRollout(req RolloutRequest) (Rollout, error) {
 
 	m.mu.Lock()
 	m.rollouts[rollout.ID] = rollout
+	if m.store != nil {
+		_ = m.store.UpsertRollout(rollout)
+	}
 	m.mu.Unlock()
 
 	for batchIndex, batchDeviceIDs := range batches {
@@ -180,6 +183,9 @@ func (m *Manager) StartRollout(req RolloutRequest) (Rollout, error) {
 	rollout.UpdatedAt = time.Now().UTC()
 	m.mu.Lock()
 	m.rollouts[rollout.ID] = rollout
+	if m.store != nil {
+		_ = m.store.UpsertRollout(rollout)
+	}
 	m.mu.Unlock()
 	return rollout, nil
 }
@@ -225,6 +231,9 @@ func (m *Manager) refreshRolloutDevices(rollout Rollout, ids []string, batchInde
 	rollout.UpdatedAt = time.Now().UTC()
 	m.mu.Lock()
 	m.rollouts[rollout.ID] = rollout
+	if m.store != nil {
+		_ = m.store.UpsertRollout(rollout)
+	}
 	m.mu.Unlock()
 	return rollout
 }

@@ -2,7 +2,9 @@ package inference
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -17,6 +19,14 @@ import (
 )
 
 const contractVersion = "1"
+
+// newRequestID generates a random 8-byte hex string for correlating
+// gRPC requests with worker-side logs.
+func newRequestID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 // circuitState represents the state of the circuit breaker.
 type circuitState int
@@ -88,11 +98,12 @@ func (c *GRPCClient) AnalyzeFrame(ctx context.Context, req FrameRequest) (FrameR
 	}
 
 	pbReq := &pb.FrameRequest{
-		CameraId:        req.CameraID,
-		ZoneId:          req.ZoneID,
-		Frame:           frameBytes,
+		RequestId:        newRequestID(),
+		CameraId:         req.CameraID,
+		ZoneId:           req.ZoneID,
+		Frame:            frameBytes,
 		CapturedAtUnixMs: req.Captured.UnixMilli(),
-		ContractVersion: contractVersion,
+		ContractVersion:  contractVersion,
 	}
 
 	pbResp, err := c.stub.AnalyzeFrame(ctx, pbReq)
