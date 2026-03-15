@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -182,6 +183,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	logStartupReport(cfg, registry)
 	log.Printf("startup: starting inference service worker pool cameras=%d queue=%d",
 		len(registry.List()), cfg.Runtime.QueueSize)
 	svc.Start(ctx)
@@ -274,6 +276,62 @@ func logDiscoveryReport(reg *camera.Registry) {
 			log.Printf("startup: camera id=%s status=%s source=%s", c.ID, c.Status, source)
 		}
 	}
+}
+
+// logStartupReport emits a single consolidated boot-time summary so operators
+// can verify the effective configuration at a glance. It is printed after all
+// wiring (zone filters, privacy, update, etc.) is complete but before any
+// background goroutines start.
+func logStartupReport(cfg config.Config, reg *camera.Registry) {
+	cams := reg.List()
+	frontDoor := 0
+	for _, c := range cams {
+		if c.FrontDoor {
+			frontDoor++
+		}
+	}
+
+	transport := cfg.Worker.Protocol
+	if transport == "" {
+		transport = "http"
+	}
+
+	privacyMode := "frame-buffer-enabled"
+	if !cfg.Privacy.FrameBufferEnabled {
+		privacyMode = "metadata-only"
+	}
+
+	updateMode := "disabled"
+	if cfg.Update.Enabled {
+		updateMode = "enabled"
+		if cfg.Update.PollEnabled {
+			updateMode = fmt.Sprintf("enabled poll=%ds", cfg.Update.PollIntervalSeconds)
+		}
+	}
+
+	streamMode := "disabled"
+	if cfg.Runtime.EnableStreamWorkers {
+		streamMode = fmt.Sprintf("enabled fps=%d", cfg.Runtime.StreamSampleFPS)
+	}
+
+	allowlistMode := "disabled"
+	if len(cfg.AllowedIPs) > 0 {
+		allowlistMode = fmt.Sprintf("enabled entries=%d", len(cfg.AllowedIPs))
+	}
+
+	log.Printf("startup: ── Koala Orchestrator ──────────────────────────────────────")
+	log.Printf("startup: version=%s device_id=%s", cfg.Service.Version, cfg.Service.DeviceID)
+	log.Printf("startup: listen=%s service_addr=%s", cfg.ListenAddr, cfg.Service.Address)
+	log.Printf("startup: inference transport=%s", transport)
+	log.Printf("startup: privacy=%s", privacyMode)
+	log.Printf("startup: runtime queue=%d freshness=%ds min_detections=%d confidence=%.2f",
+		cfg.Runtime.QueueSize, cfg.Runtime.FreshnessWindow,
+		cfg.Runtime.MinDetections, cfg.Runtime.ConfidenceThreshold)
+	log.Printf("startup: cameras=%d front_door=%d zones=%d",
+		len(cams), frontDoor, len(cfg.Zones))
+	log.Printf("startup: stream_workers=%s update=%s ip_allowlist=%s",
+		streamMode, updateMode, allowlistMode)
+	log.Printf("startup: ─────────────────────────────────────────────────────────────")
 }
 
 // buildConfigSnapshot returns a sanitised view of cfg for the /admin/config
