@@ -12,6 +12,21 @@ Build a local-first, privacy-preserving home security platform that gives AI age
 4. Progressive hardening: correctness first, then performance, then resilience.
 5. Every feature ships with tests and MCP contract checks.
 
+## Product Surfaces
+
+Koala now has two distinct product surfaces:
+
+- Koala service and admin APIs used by BearClaw Web for administrative security workflows
+- Koala Live, a separate consumer-facing product owned in the `Koala` repo
+
+Koala Live should feel more like a direct home security product, similar in spirit to Ring:
+
+- mostly read-only monitoring and playback
+- selected consumer-safe write actions such as profile edits, saved recordings, and notification preferences
+- no broad administrative control plane behavior that belongs in BearClaw Web
+
+The first Koala Live deployment target is not Jetson. It is a Docker deployment on the Ubuntu server on `blink`, with camera feeds deferred until the underlying media path is ready. Jetson deployment remains the target embedded shape after that.
+
 ## Portfolio Alignment (Iteration 3)
 
 This section tracks only the Koala items assigned in `PORTFOLIO-PRIORITY.md`.
@@ -27,6 +42,7 @@ Implemented scaffold:
 - Python inference worker with YOLO abstraction + deterministic fallback detector.
 - Initial proto contract for future gRPC boundary.
 - Docker Compose and container build setup.
+- Consumer-facing `live-ui/` React and TypeScript app scaffolded for Koala Live, wired to current read endpoints with local-only fallbacks for profile and saved-moment writes.
 - Unit/integration tests for core Go modules and Python detector/model parsing.
 - Remote update foundation: signed/encrypted bundles, rotation-aware signature verification, rollout orchestration, polling mode, and SQLite-backed security/rollout history.
 - Streaming foundation: persistent ffmpeg ingest workers with reconnect policy, stall watchdog, MCP-visible ingest incident snapshots.
@@ -40,7 +56,8 @@ Known gap:
 
 ### MVP (v0.1)
 - Front door package/person state is queryable via MCP with deterministic JSON schema.
-- Multi-camera ingest path operational through DVR network streams (RTSP-first).
+- Docker-deployed Koala service runs on `blink` Ubuntu as the first real deployment target.
+- Multi-camera ingest path operational through DVR network streams (RTSP-first) once live feeds are enabled.
 - Degraded responses explicitly surfaced when inference is unavailable.
 - Metadata-only persistence enabled by default.
 - Over-the-network software update delivery to embedded Koala devices (no USB/manual reflash workflow).
@@ -105,6 +122,18 @@ Known gap:
 - [ ] Define orchestrator update API contracts (check, download, stage, apply, rollback, status).
 - [ ] Define device identity and enrollment model for local-network update targeting.
 - [ ] Add explicit rollback and health-check policy for failed updates.
+
+#### 1.5 First Deployment Shape
+- [ ] Define Docker deployment shape for Ubuntu on `blink`.
+- [ ] Define container networking, volumes, secrets, and persistent storage paths.
+- [ ] Keep first deployment camera-feed-free if media ingest is not ready yet.
+- [ ] Document migration path from `blink` Docker deployment to Jetson deployment later.
+
+#### 1.6 Koala Live UI Foundation
+- [x] Create `live-ui/` consumer-facing frontend app.
+- [x] Wire the UI to `koala.get_system_health`, `koala.list_cameras`, `koala.get_zone_state`, `koala.check_package_at_door`, and `/admin/ingest/status`.
+- [ ] Add a deployment path that serves or packages Koala Live alongside the orchestrator deployment.
+- [ ] Replace local-only saved-moment and profile writes with real consumer APIs when those contracts exist.
 
 ### Tests
 - [ ] Go unit tests for config validation edge cases.
