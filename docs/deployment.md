@@ -46,7 +46,7 @@ This is the fastest way to get Koala running locally or on a staging host.
 ### 1 — Clone and configure
 
 ```bash
-git clone https://github.com/barelabs/koala.git
+git clone https://github.com/baresystems/koala.git
 cd koala
 cp configs/koala.example.yaml configs/koala.yaml
 ```

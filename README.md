@@ -1,6 +1,6 @@
 # Koala
 
-Koala is a local-first AI home-state service for Bare Labs.
+Koala is a local-first AI home-state service for Bare Systems.
 
 ## MVP Architecture
 

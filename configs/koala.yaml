@@ -33,10 +33,44 @@ zones:
   - id: "front_door"
     name: "Front Door"
 cameras:
-  - id: "cam_front_1"
-    name: "Front Door Camera"
-    rtsp_url: "rtsp://dvr.local:554/ch1"
-    onvif_url: "http://dvr.local/onvif/device_service"
+  - id: "cam_1"
+    name: "CAM 1"
+    rtsp_url: "rtsp://192.168.86.46:554/user=admin&password=&channel=1&stream=0.sdp?real_stream"
     zone_id: "front_door"
     front_door: true
+    probe_at_boot: true
+  - id: "cam_2"
+    name: "CAM 2"
+    rtsp_url: "rtsp://192.168.86.46:554/user=admin&password=&channel=2&stream=0.sdp?real_stream"
+    zone_id: "front_door"
+    probe_at_boot: true
+  - id: "cam_3"
+    name: "CAM 3"
+    rtsp_url: "rtsp://192.168.86.46:554/user=admin&password=&channel=3&stream=0.sdp?real_stream"
+    zone_id: "front_door"
+    probe_at_boot: true
+  - id: "cam_4"
+    name: "CAM 4"
+    rtsp_url: "rtsp://192.168.86.46:554/user=admin&password=&channel=4&stream=0.sdp?real_stream"
+    zone_id: "front_door"
+    probe_at_boot: true
+  - id: "cam_5"
+    name: "CAM 5"
+    rtsp_url: "rtsp://192.168.86.46:554/user=admin&password=&channel=5&stream=0.sdp?real_stream"
+    zone_id: "front_door"
+    probe_at_boot: true
+  - id: "cam_6"
+    name: "CAM 6"
+    rtsp_url: "rtsp://192.168.86.46:554/user=admin&password=&channel=6&stream=0.sdp?real_stream"
+    zone_id: "front_door"
+    probe_at_boot: true
+  - id: "cam_7"
+    name: "CAM 7"
+    rtsp_url: "rtsp://192.168.86.46:554/user=admin&password=&channel=7&stream=0.sdp?real_stream"
+    zone_id: "front_door"
+    probe_at_boot: true
+  - id: "cam_8"
+    name: "CAM 8"
+    rtsp_url: "rtsp://192.168.86.46:554/user=admin&password=&channel=8&stream=0.sdp?real_stream"
+    zone_id: "front_door"
     probe_at_boot: true

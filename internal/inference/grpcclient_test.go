@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	pb "github.com/barelabs/koala/proto/inferencev1"
+	pb "github.com/baresystems/koala/proto/inferencev1"
 )
 
 const testBufSize = 1 << 20 // 1 MiB

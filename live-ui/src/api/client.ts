@@ -134,6 +134,8 @@ function toneFromStatus(status: string): Tone {
 function buildCameraCards(
   cameras: KoalaCamera[],
   ingest: KoalaIngestStatus,
+  baseUrl: string,
+  token: string,
 ): CameraCard[] {
   return cameras.map((camera) => {
     const ingestCamera = ingest.cameras[camera.id]
@@ -151,6 +153,7 @@ function buildCameraCards(
       statusLabel: ingestCamera?.last_status || camera.status,
       detail: detailParts.join(' · ') || 'Camera reachable with no recent incidents.',
       tone: toneFromStatus(ingestCamera?.last_status || camera.status),
+      snapshotUrl: baseUrl ? `${baseUrl}/admin/cameras/${camera.id}/snapshot?token=${encodeURIComponent(token)}` : undefined,
     }
   })
 }
@@ -258,7 +261,7 @@ export function createKoalaLiveClient(settings: KoalaSettings) {
         }),
       ])
 
-      const cameraCards = buildCameraCards(cameras.data.cameras, ingest.data)
+      const cameraCards = buildCameraCards(cameras.data.cameras, ingest.data, baseUrl, settings.token)
       const stats = buildStats(health.data, cameras.data.cameras, packageState.data)
       const activity = buildActivity(zoneState.data, packageState.data, ingest.data)
 

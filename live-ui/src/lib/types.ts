@@ -16,6 +16,7 @@ export type CameraCard = {
   statusLabel: string
   detail: string
   tone: Tone
+  snapshotUrl?: string
 }
 
 export type ActivityItem = {

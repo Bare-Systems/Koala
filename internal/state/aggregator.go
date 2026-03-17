@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/barelabs/koala/internal/zone"
+	"github.com/baresystems/koala/internal/zone"
 )
 
 type Detection struct {

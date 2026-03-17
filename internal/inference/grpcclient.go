@@ -14,8 +14,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
-	"github.com/barelabs/koala/internal/zone"
-	pb "github.com/barelabs/koala/proto/inferencev1"
+	"github.com/baresystems/koala/internal/zone"
+	pb "github.com/baresystems/koala/proto/inferencev1"
 )
 
 const contractVersion = "1"

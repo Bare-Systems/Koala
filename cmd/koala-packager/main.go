@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/barelabs/koala/internal/update"
+	"github.com/baresystems/koala/internal/update"
 )
 
 func main() {

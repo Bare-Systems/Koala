@@ -298,11 +298,25 @@
   line-height: 1.7;
 }
 
+.camera-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .camera-card {
   padding: 1rem 1.05rem;
   border-radius: 1.25rem;
   border: 1px solid rgba(52, 86, 84, 0.1);
   background: rgba(250, 253, 255, 0.94);
+}
+
+.camera-snapshot {
+  width: 100%;
+  border-radius: 0.75rem;
+  margin-bottom: 0.7rem;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: rgba(52, 86, 84, 0.08);
+  display: block;
 }
 
 .camera-card header {
@@ -383,6 +397,7 @@
   .prompt-row,
   .stats-grid,
   .action-row,
+  .camera-grid,
   .field-grid {
     grid-template-columns: 1fr;
   }

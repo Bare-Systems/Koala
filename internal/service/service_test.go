@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barelabs/koala/internal/camera"
-	"github.com/barelabs/koala/internal/inference"
-	"github.com/barelabs/koala/internal/state"
-	"github.com/barelabs/koala/internal/zone"
+	"github.com/baresystems/koala/internal/camera"
+	"github.com/baresystems/koala/internal/inference"
+	"github.com/baresystems/koala/internal/state"
+	"github.com/baresystems/koala/internal/zone"
 )
 
 type staticInferenceClient struct {

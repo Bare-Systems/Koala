@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barelabs/koala/internal/camera"
-	"github.com/barelabs/koala/internal/inference"
-	"github.com/barelabs/koala/internal/service"
-	"github.com/barelabs/koala/internal/state"
+	"github.com/baresystems/koala/internal/camera"
+	"github.com/baresystems/koala/internal/inference"
+	"github.com/baresystems/koala/internal/service"
+	"github.com/baresystems/koala/internal/state"
 )
 
 type fakeInferenceClient struct {

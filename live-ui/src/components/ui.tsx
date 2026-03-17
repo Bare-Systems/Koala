@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { ActivityItem, CameraCard, LiveTab, Tone } from '../lib/types'
 
 const tabs: Array<{ id: LiveTab; label: string; eyebrow: string }> = [
@@ -82,6 +82,14 @@ type CameraCardProps = {
 }
 
 export function CameraCardView({ camera }: CameraCardProps) {
+  const [buster, setBuster] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!camera.snapshotUrl) return
+    const interval = setInterval(() => setBuster(Date.now()), 5000)
+    return () => clearInterval(interval)
+  }, [camera.snapshotUrl])
+
   return (
     <article className={`camera-card tone-${camera.tone}`}>
       <header>
@@ -91,6 +99,13 @@ export function CameraCardView({ camera }: CameraCardProps) {
         </div>
         <StatusPill label={camera.statusLabel} tone={camera.tone} />
       </header>
+      {camera.snapshotUrl && (
+        <img
+          className="camera-snapshot"
+          src={`${camera.snapshotUrl}&t=${buster}`}
+          alt={`${camera.name} live snapshot`}
+        />
+      )}
       <p>{camera.detail}</p>
     </article>
   )

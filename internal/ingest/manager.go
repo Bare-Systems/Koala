@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/barelabs/koala/internal/camera"
-	"github.com/barelabs/koala/internal/service"
+	"github.com/baresystems/koala/internal/camera"
+	"github.com/baresystems/koala/internal/service"
 )
 
 type Submitter interface {
@@ -70,6 +70,9 @@ type Manager struct {
 	stalled   map[string]bool
 	startedAt time.Time
 
+	latestFramesMu sync.RWMutex
+	latestFrames   map[string][]byte
+
 	stallTimeout    time.Duration
 	maxIncidentSize int
 }
@@ -93,6 +96,7 @@ func NewManager(registry *camera.Registry, submitter Submitter, snapshotter Snap
 		captureTimeout:  captureTimeout,
 		stats:           stats,
 		stalled:         map[string]bool{},
+		latestFrames:    map[string][]byte{},
 		startedAt:       time.Now().UTC(),
 		stallTimeout:    maxDuration(10*time.Second, sampleEvery*3),
 		maxIncidentSize: 200,
@@ -169,6 +173,10 @@ func (m *Manager) runCamera(ctx context.Context, cam camera.Camera) {
 				m.markFailure(cam.ID, err)
 				continue
 			}
+
+			m.latestFramesMu.Lock()
+			m.latestFrames[cam.ID] = frame
+			m.latestFramesMu.Unlock()
 
 			m.registry.SetStatus(cam.ID, camera.StatusAvailable)
 			now := time.Now().UTC()
@@ -309,6 +317,15 @@ func (m *Manager) recordIncidentLocked(incident Incident) {
 	if len(m.incidents) > m.maxIncidentSize {
 		m.incidents = m.incidents[len(m.incidents)-m.maxIncidentSize:]
 	}
+}
+
+// LatestFrame returns the most recently captured JPEG frame for the given
+// camera ID. Returns false if no frame has been captured yet.
+func (m *Manager) LatestFrame(cameraID string) ([]byte, bool) {
+	m.latestFramesMu.RLock()
+	defer m.latestFramesMu.RUnlock()
+	frame, ok := m.latestFrames[cameraID]
+	return frame, ok
 }
 
 func maxDuration(a time.Duration, b time.Duration) time.Duration {

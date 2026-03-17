@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barelabs/koala/internal/camera"
-	"github.com/barelabs/koala/internal/service"
+	"github.com/baresystems/koala/internal/camera"
+	"github.com/baresystems/koala/internal/service"
 )
 
 type fakeSnapshotter struct {

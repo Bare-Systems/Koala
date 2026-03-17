@@ -14,10 +14,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/barelabs/koala/internal/audit"
-	"github.com/barelabs/koala/internal/ingest"
-	"github.com/barelabs/koala/internal/service"
-	"github.com/barelabs/koala/internal/update"
+	"github.com/baresystems/koala/internal/audit"
+	"github.com/baresystems/koala/internal/ingest"
+	"github.com/baresystems/koala/internal/service"
+	"github.com/baresystems/koala/internal/update"
 )
 
 const (
@@ -106,6 +106,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/admin/updates/rollouts/get", s.wrapAuth(s.rolloutGet))
 	mux.HandleFunc("/admin/updates/rollouts/list", s.wrapAuth(s.rolloutList))
 	mux.HandleFunc("/admin/ingest/status", s.wrapAuth(s.ingestStatus))
+	mux.HandleFunc("/admin/cameras/{id}/snapshot", s.cameraSnapshot)
 	mux.HandleFunc("/admin/config", s.wrapAuth(s.getConfig))
 	mux.HandleFunc("/admin/auth/rotate-token", s.wrapAuth(s.rotateToken))
 
@@ -118,7 +119,22 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/agent/updates/stage", s.wrapAuth(s.agentStage))
 	mux.HandleFunc("/agent/updates/apply", s.wrapAuth(s.agentApply))
 	mux.HandleFunc("/agent/updates/rollback", s.wrapAuth(s.agentRollback))
-	return mux
+	return corsMiddleware(mux)
+}
+
+// corsMiddleware adds CORS headers so the live-ui (served on a different port)
+// can call the orchestrator API from the browser.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) wrapAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -412,6 +428,34 @@ func (s *Server) ingestStatus(w http.ResponseWriter, _ *http.Request) {
 		"explanation": "ingest worker status snapshot",
 		"data":        status,
 	})
+}
+
+// cameraSnapshot serves the latest captured JPEG frame for a camera.
+// Auth is accepted via Authorization: Bearer header or ?token= query param
+// so that <img src="..."> tags in the live UI can load frames directly.
+func (s *Server) cameraSnapshot(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
+	if token == "" || token != s.currentToken() {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if s.ingest == nil {
+		http.Error(w, "ingest not configured", http.StatusNotImplemented)
+		return
+	}
+	id := r.PathValue("id")
+	frame, ok := s.ingest.LatestFrame(id)
+	if !ok {
+		http.Error(w, "no frame available yet", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Content-Length", strconv.Itoa(len(frame)))
+	_, _ = w.Write(frame)
 }
 
 func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request) {
