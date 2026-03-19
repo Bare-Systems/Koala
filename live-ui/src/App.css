@@ -375,6 +375,64 @@
   margin-top: 0.7rem;
 }
 
+.device-list {
+  display: grid;
+  gap: 0;
+}
+
+.device-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid rgba(52, 86, 84, 0.08);
+}
+
+.device-row:first-child {
+  padding-top: 0;
+}
+
+.device-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.device-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.device-row-info strong {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.device-zone {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  margin-top: 0.1rem;
+}
+
+.device-action-warn {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  border-radius: 999px;
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease;
+  padding: 0.55rem 0.85rem;
+  background: rgba(255, 197, 97, 0.3);
+  color: var(--amber-700);
+}
+
+.device-action-warn:hover,
+.device-action-warn:focus-visible {
+  transform: translateY(-1px);
+}
+
 .tone-healthy {
   color: var(--teal-700);
 }

@@ -1,9 +1,9 @@
 import { startTransition, useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
-import { createKoalaLiveClient, getDefaultSettings } from './api/client'
-import { ActivityList, CameraCardView, Panel, StatCard, StatusPill, TabBar, ToggleRow } from './components/ui'
-import { previewSnapshot, tabPrompts } from './data/mockData'
-import type { ActivityItem, DashboardSnapshot, KoalaSettings, LiveTab } from './lib/types'
+import { createKoalaLiveClient, getDefaultSettings, toneFromQuality } from './api/client'
+import { ActivityList, CameraCardView, DeviceRow, Panel, StatCard, StatusPill, TabBar, ToggleRow, type DeviceAction } from './components/ui'
+import { previewClimateSnapshot, previewSnapshot, tabPrompts } from './data/mockData'
+import type { ActivityItem, ClimateSnapshot, DashboardSnapshot, KoalaSettings, LiveTab } from './lib/types'
 
 const settingsKey = 'koala-live-settings'
 const savedMomentsKey = 'koala-live-saved-moments'
@@ -30,6 +30,7 @@ function App() {
     }
   })
   const [snapshot, setSnapshot] = useState<DashboardSnapshot>(previewSnapshot)
+  const [climateSnapshot, setClimateSnapshot] = useState<ClimateSnapshot>(previewClimateSnapshot)
   const [savedMoments, setSavedMoments] = useState<string[]>(() => {
     const stored = globalThis.localStorage?.getItem(savedMomentsKey)
     if (!stored) {
@@ -74,6 +75,34 @@ function App() {
   useEffect(() => {
     void refreshDashboard()
   }, [refreshDashboard])
+
+  const refreshClimate = useCallback(async () => {
+    try {
+      const next = await client.loadClimate()
+      setClimateSnapshot(next)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Unknown error'
+      setStatusText(detail)
+    }
+  }, [client])
+
+  useEffect(() => {
+    void refreshClimate()
+  }, [refreshClimate])
+
+  const handleDeviceAction = useCallback((deviceId: string, action: DeviceAction) => {
+    setSnapshot((current) => ({
+      ...current,
+      devices: current.devices.map((device) => {
+        if (device.id !== deviceId) return device
+        if (action === 'lock') return { ...device, lockState: 'locked' as const, tone: 'healthy' as const }
+        if (action === 'unlock') return { ...device, lockState: 'unlocked' as const, tone: 'warning' as const }
+        if (action === 'open') return { ...device, openState: 'open' as const, tone: 'warning' as const }
+        if (action === 'close') return { ...device, openState: 'closed' as const, tone: 'healthy' as const }
+        return device
+      }),
+    }))
+  }, [])
 
   const toggleSavedMoment = useCallback((item: ActivityItem) => {
     setSavedMoments((current) =>
@@ -142,22 +171,28 @@ function App() {
 
             <div className="stack">
               <Panel
-                eyebrow="Front Door"
-                title="Doorstep summary"
-                subtitle="The most consumer-friendly reading of the current front door state."
+                eyebrow="Locks"
+                title="Lock status"
+                subtitle="Tap to lock or unlock any entry point."
               >
-                <p className="summary-copy">{snapshot.packageSummary}</p>
-                <p className="summary-copy summary-copy-muted">{snapshot.zoneSummary}</p>
+                <div className="device-list">
+                  {snapshot.devices.filter((d) => d.type === 'lock').map((device) => (
+                    <DeviceRow key={device.id} device={device} onAction={handleDeviceAction} />
+                  ))}
+                </div>
               </Panel>
 
               <Panel
-                eyebrow="Saved"
-                title="Saved moments"
-                subtitle="Stored locally until Koala recording and consumer-save APIs exist."
+                eyebrow="Entry Points"
+                title="Doors & windows"
+                subtitle="Open and closed state across the home."
               >
-                <div className="saved-count">
-                  <strong>{savedMoments.length}</strong>
-                  <span>moments saved on this device</span>
+                <div className="device-list">
+                  {snapshot.devices
+                    .filter((d) => d.type === 'door' || d.type === 'window')
+                    .map((device) => (
+                      <DeviceRow key={device.id} device={device} onAction={handleDeviceAction} />
+                    ))}
                 </div>
               </Panel>
             </div>
@@ -219,6 +254,54 @@ function App() {
             </Panel>
           </div>
         )
+      case 'climate': {
+        const indoorLabel = climateSnapshot.indoor.stale ? 'Stale · last reading may be old' : `via ${climateSnapshot.indoor.sources.join(', ') || 'no sources connected'}`
+        const outdoorLabel = climateSnapshot.outdoor.stale ? 'Stale · forecast may be old' : `via ${climateSnapshot.outdoor.sources.join(', ') || 'no sources connected'}`
+        return (
+          <div className="content-grid">
+            <Panel
+              eyebrow="Indoor Air"
+              title="Inside the home"
+              subtitle={indoorLabel}
+            >
+              <div className="stats-grid">
+                {climateSnapshot.indoor.readings.map((metric) => (
+                  <StatCard
+                    key={metric.name}
+                    label={metric.display_name}
+                    value={metric.display_value}
+                    detail={metric.domain.replace('_', ' ')}
+                    tone={toneFromQuality(metric.quality)}
+                  />
+                ))}
+              </div>
+              <div className="action-row">
+                <button className="primary-button" onClick={() => void refreshClimate()} type="button">
+                  {isRefreshing ? 'Refreshing…' : 'Refresh climate'}
+                </button>
+              </div>
+            </Panel>
+
+            <Panel
+              eyebrow="Outdoors"
+              title="Outside conditions"
+              subtitle={outdoorLabel}
+            >
+              <div className="stats-grid">
+                {climateSnapshot.outdoor.current.map((metric) => (
+                  <StatCard
+                    key={metric.name}
+                    label={metric.display_name}
+                    value={metric.display_value}
+                    detail={metric.domain.replace('_', ' ')}
+                    tone={toneFromQuality(metric.quality)}
+                  />
+                ))}
+              </div>
+            </Panel>
+          </div>
+        )
+      }
       case 'profile':
         return (
           <div className="content-grid">
@@ -285,6 +368,32 @@ function App() {
                       }))
                     }
                     placeholder="Consumer-safe token"
+                  />
+                </label>
+                <label className="field">
+                  <span>Polar URL</span>
+                  <input
+                    value={settings.polarBaseUrl}
+                    onChange={(event) =>
+                      setSettings((current) => ({
+                        ...current,
+                        polarBaseUrl: event.target.value,
+                      }))
+                    }
+                    placeholder="https://polar.example.com"
+                  />
+                </label>
+                <label className="field">
+                  <span>Polar token</span>
+                  <input
+                    value={settings.polarToken}
+                    onChange={(event) =>
+                      setSettings((current) => ({
+                        ...current,
+                        polarToken: event.target.value,
+                      }))
+                    }
+                    placeholder="Polar service token"
                   />
                 </label>
               </div>

@@ -558,7 +558,7 @@ const file_koala_inference_proto_rawDesc = "" +
 	"\x0fInferenceWorker\x12S\n" +
 	"\fAnalyzeFrame\x12 .koala.inference.v1.FrameRequest\x1a!.koala.inference.v1.FrameResponse\x12S\n" +
 	"\fAnalyzeBatch\x12 .koala.inference.v1.BatchRequest\x1a!.koala.inference.v1.BatchResponse\x12U\n" +
-	"\fWorkerHealth\x12!.koala.inference.v1.HealthRequest\x1a\".koala.inference.v1.HealthResponseB-Z+github.com/baresystems/koala/proto/inferencev1b\x06proto3"
+	"\fWorkerHealth\x12!.koala.inference.v1.HealthRequest\x1a\".koala.inference.v1.HealthResponseB0Z.github.com/baresystems/koala/proto/inferencev1b\x06proto3"
 
 var (
 	file_koala_inference_proto_rawDescOnce sync.Once

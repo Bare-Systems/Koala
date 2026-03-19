@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "koala-live-ui",
+      "runtimeExecutable": ".claude/scripts/koala-preview.sh",
+      "runtimeArgs": [],
+      "port": 9081
+    }
+  ]
+}

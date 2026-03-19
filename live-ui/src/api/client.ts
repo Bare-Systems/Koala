@@ -1,9 +1,11 @@
-import { previewSnapshot } from '../data/mockData'
+import { previewClimateSnapshot, previewSnapshot } from '../data/mockData'
 import type {
   ActivityItem,
   CameraCard,
+  ClimateSnapshot,
   DashboardSnapshot,
   KoalaSettings,
+  PolarQualityFlag,
   StatItem,
   Tone,
 } from '../lib/types'
@@ -224,10 +226,19 @@ function buildActivity(
   return items
 }
 
+export function toneFromQuality(quality: PolarQualityFlag): Tone {
+  if (quality === 'good') return 'healthy'
+  if (quality === 'outlier') return 'warning'
+  if (quality === 'unavailable') return 'critical'
+  return 'neutral'
+}
+
 export function getDefaultSettings(): KoalaSettings {
   return {
     baseUrl: import.meta.env.VITE_KOALA_API_BASE_URL ?? '',
     token: import.meta.env.VITE_KOALA_TOKEN ?? '',
+    polarBaseUrl: import.meta.env.VITE_POLAR_API_BASE_URL ?? '',
+    polarToken: import.meta.env.VITE_POLAR_TOKEN ?? '',
     viewerName: 'Home',
     notificationsEnabled: true,
   }
@@ -235,6 +246,7 @@ export function getDefaultSettings(): KoalaSettings {
 
 export function createKoalaLiveClient(settings: KoalaSettings) {
   const baseUrl = normalizeBaseUrl(settings.baseUrl)
+  const polarBaseUrl = normalizeBaseUrl(settings.polarBaseUrl)
 
   async function postTool<T>(tool: string, input: Record<string, unknown> = {}) {
     return requestJson<ToolEnvelope<T>>(`${baseUrl}/mcp/tools/${tool}`, {
@@ -281,9 +293,20 @@ export function createKoalaLiveClient(settings: KoalaSettings) {
         serviceTone: toneFromStatus(health.status),
         stats,
         cameras: cameraCards,
+        devices: [],
         activity,
         lastUpdatedLabel: formatIsoLabel(zoneState.data.observed_at),
       }
+    },
+
+    async loadClimate(): Promise<ClimateSnapshot> {
+      if (!canRequest(polarBaseUrl)) {
+        return previewClimateSnapshot
+      }
+      return requestJson<ClimateSnapshot>(`${polarBaseUrl}/v1/climate/snapshot`, {
+        method: 'GET',
+        headers: buildHeaders(settings.polarToken, false),
+      })
     },
 
     async checkPackage(): Promise<ActivityItem> {

@@ -1,0 +1,284 @@
+[blink]
+version = "1"
+
+# ── Target ────────────────────────────────────────────────────────────────────
+
+[targets.homelab]
+type        = "ssh"
+host        = "blink"
+user        = "admin"
+base        = "/home/admin/baresystems"
+runtime_dir = "/home/admin/baresystems/runtime/koala"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# koala-orchestrator — Go binary, manages camera feeds and inference dispatch
+# Ports: 6704 (MCP + HTTP)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[services.koala-orchestrator]
+description  = "Koala orchestrator — camera management and inference dispatch"
+port         = "6704"
+service_name = "koala-orchestrator"
+
+# ── Source ────────────────────────────────────────────────────────────────────
+
+[services.koala-orchestrator.source]
+type    = "local_build"
+workdir = "."
+default = "linux-amd64"
+
+[services.koala-orchestrator.source.builds.linux-amd64]
+command  = "GOOS=linux GOARCH=amd64 go build -o bin/koala-orchestrator-linux-amd64 ./cmd/koala-orchestrator"
+artifact = "bin/koala-orchestrator-linux-amd64"
+
+[services.koala-orchestrator.source.builds.linux-arm64]
+command  = "GOOS=linux GOARCH=arm64 go build -o bin/koala-orchestrator-linux-arm64 ./cmd/koala-orchestrator"
+artifact = "bin/koala-orchestrator-linux-arm64"
+
+# ── Pipeline ──────────────────────────────────────────────────────────────────
+
+[services.koala-orchestrator.deploy]
+target            = "homelab"
+pipeline          = ["fetch_artifact", "provision", "stop", "install", "docker", "health_check", "verify"]
+rollback_pipeline = ["stop", "docker", "health_check"]
+
+# ── Provision ─────────────────────────────────────────────────────────────────
+
+[services.koala-orchestrator.provision]
+dirs = [
+  "{{runtime_dir}}/orchestrator/staging",
+  "{{runtime_dir}}/orchestrator/data",
+  "{{runtime_dir}}/orchestrator/logs",
+  "{{runtime_dir}}/orchestrator/capability-cache"
+]
+
+[services.koala-orchestrator.provision.env_file]
+path = "{{runtime_dir}}/orchestrator/koala-orchestrator.env"
+
+[services.koala-orchestrator.provision.env_file.seed]
+KOALA_MCP_TOKEN  = "replace-me"
+KOALA_DEVICE_ID  = "homelab-01"
+
+# ── Stop ──────────────────────────────────────────────────────────────────────
+
+[services.koala-orchestrator.stop]
+command = "docker stop koala-orchestrator 2>/dev/null || true && docker rm koala-orchestrator 2>/dev/null || true"
+
+# ── Install ───────────────────────────────────────────────────────────────────
+
+[services.koala-orchestrator.install]
+dest = "runtime/koala/orchestrator/staging/koala-orchestrator"
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+
+[services.koala-orchestrator.docker]
+name    = "koala-orchestrator"
+restart = "unless-stopped"
+
+[services.koala-orchestrator.docker.build]
+context    = "{{runtime_dir}}/orchestrator/staging"
+dockerfile = """
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+COPY koala-orchestrator /usr/local/bin/koala-orchestrator
+RUN chmod +x /usr/local/bin/koala-orchestrator
+CMD ["/usr/local/bin/koala-orchestrator", "-config", "/etc/koala/koala.yaml"]
+"""
+
+[services.koala-orchestrator.docker.ports]
+http = "127.0.0.1:{{port}}:{{port}}"
+
+[services.koala-orchestrator.docker.volumes]
+config = "{{runtime_dir}}/orchestrator/data:/etc/koala"
+cache  = "{{runtime_dir}}/orchestrator/capability-cache:/var/cache/koala"
+logs   = "{{runtime_dir}}/orchestrator/logs:/var/log/koala"
+
+[services.koala-orchestrator.docker.env]
+KOALA_LISTEN_ADDR = ":{{port}}"
+
+[services.koala-orchestrator.docker.env_file]
+path = "{{runtime_dir}}/orchestrator/koala-orchestrator.env"
+
+# ── Health check ──────────────────────────────────────────────────────────────
+
+[services.koala-orchestrator.health_check]
+url      = "http://127.0.0.1:{{port}}/healthz"
+timeout  = 30
+interval = 2
+
+# ── Inline tests ──────────────────────────────────────────────────────────────
+
+[services.koala-orchestrator.verify]
+tags = ["smoke", "health"]
+
+[services.koala-orchestrator.verify.tests.health]
+type          = "http"
+url           = "http://127.0.0.1:{{port}}/healthz"
+expect_status = 200
+tags          = ["smoke"]
+
+[services.koala-orchestrator.verify.tests.container-running]
+type          = "shell"
+command       = "docker inspect --format '{{.State.Status}}' koala-orchestrator 2>/dev/null"
+expect_output = "running"
+tags          = ["health"]
+
+[services.koala-orchestrator.verify.tests.auth-required]
+type          = "http"
+url           = "http://127.0.0.1:{{port}}/mcp/tools/koala.get_system_health"
+expect_status = 401
+tags          = ["smoke"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# koala-worker — Python inference worker (YOLO), gRPC transport
+# Port: 6706 (gRPC)
+#
+# Note: the worker is Python and built from source on the remote host.
+# The pipeline uses remote_script.inline rather than fetch_artifact since
+# there is no local cross-compiled binary to ship. Source is expected to be
+# checked out at {{runtime_dir}}/worker/src on the remote (one-time setup).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[services.koala-worker]
+description  = "Koala inference worker — YOLO object detection"
+grpc_port    = "6706"
+service_name = "koala-worker"
+
+# ── Pipeline ──────────────────────────────────────────────────────────────────
+# No fetch_artifact — Python source lives on the remote.
+
+[services.koala-worker.deploy]
+target            = "homelab"
+pipeline          = ["provision", "stop", "remote_script", "health_check", "verify"]
+rollback_pipeline = ["stop", "remote_script", "health_check"]
+
+# ── Provision ─────────────────────────────────────────────────────────────────
+
+[services.koala-worker.provision]
+dirs = [
+  "{{runtime_dir}}/worker/src",
+  "{{runtime_dir}}/worker/models",
+  "{{runtime_dir}}/worker/logs"
+]
+
+# ── Stop ──────────────────────────────────────────────────────────────────────
+
+[services.koala-worker.stop]
+command = "docker stop koala-worker 2>/dev/null || true && docker rm koala-worker 2>/dev/null || true"
+
+# ── Remote script: build image from source and run container ──────────────────
+# Source must be checked out to {{runtime_dir}}/worker/src before first deploy.
+# Run once: git clone https://github.com/Bare-Labs/Koala worker/src
+
+[services.koala-worker.remote_script]
+inline = """
+set -e
+cd {{runtime_dir}}/worker/src
+docker build -t koala-worker:local .
+docker run -d \
+  --name koala-worker \
+  --restart unless-stopped \
+  -p 127.0.0.1:{{grpc_port}}:{{grpc_port}} \
+  -v {{runtime_dir}}/worker/models:/models \
+  -e KOALA_TRANSPORT=grpc \
+  -e KOALA_GRPC_PORT={{grpc_port}} \
+  koala-worker:local
+"""
+
+# ── Health check: verify the container is accepting connections ───────────────
+# gRPC health is checked via container state (no HTTP endpoint in gRPC mode).
+
+[services.koala-worker.health_check]
+url      = "http://127.0.0.1:6704/mcp/tools/koala.get_system_health"
+timeout  = 45
+interval = 3
+
+# ── Inline tests ──────────────────────────────────────────────────────────────
+
+[services.koala-worker.verify]
+tags = ["smoke", "health"]
+
+[services.koala-worker.verify.tests.container-running]
+type          = "shell"
+command       = "docker inspect --format '{{.State.Status}}' koala-worker 2>/dev/null"
+expect_output = "running"
+tags          = ["smoke", "health"]
+
+[services.koala-worker.verify.tests.grpc-port-open]
+type          = "shell"
+command       = "ss -tlnp 2>/dev/null | grep -q ':{{grpc_port}}' && echo listening || echo closed"
+expect_output = "listening"
+tags          = ["smoke"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# koala-ui — React/TypeScript SPA (static files served by Tardigrade)
+# No port — Tardigrade routes /koala/* to the static file dir.
+#
+# Pipeline: build dist/ locally → tar → upload → extract to Tardigrade static.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[services.koala-ui]
+description     = "Koala live UI — static SPA served by Tardigrade"
+tardigrade_root = "/home/admin/baresystems/runtime/tardigrade/static"
+service_name    = "koala-ui"
+
+# ── Source: build the React app locally and bundle as a tarball ───────────────
+
+[services.koala-ui.source]
+type    = "local_build"
+workdir = "live-ui"
+command = "npm ci && npm run build && tar czf ../koala-ui-dist.tar.gz dist/"
+artifact = "../koala-ui-dist.tar.gz"
+
+# ── Pipeline ──────────────────────────────────────────────────────────────────
+
+[services.koala-ui.deploy]
+target   = "homelab"
+pipeline = ["fetch_artifact", "provision", "stop", "install", "start", "verify"]
+
+# ── Provision ─────────────────────────────────────────────────────────────────
+
+[services.koala-ui.provision]
+dirs = [
+  "{{tardigrade_root}}/koala",
+  "{{runtime_dir}}/ui"
+]
+
+# ── Stop: no-op for static files — nothing to stop ────────────────────────────
+
+[services.koala-ui.stop]
+command = "echo 'koala-ui: no running process to stop'"
+
+# ── Install: upload the tarball to the remote staging area ───────────────────
+
+[services.koala-ui.install]
+dest = "runtime/koala/ui/koala-ui-dist.tar.gz"
+
+# ── Start: extract the tarball into the Tardigrade static dir ────────────────
+
+[services.koala-ui.start]
+command = "tar xzf {{runtime_dir}}/ui/koala-ui-dist.tar.gz -C {{tardigrade_root}}/koala --strip-components=1"
+
+# ── Inline tests ──────────────────────────────────────────────────────────────
+# Tardigrade routes https://blink/koala → the static dir.
+# Test via loopback through Tardigrade on port 8443.
+
+[services.koala-ui.verify]
+tags = ["smoke"]
+
+[services.koala-ui.verify.tests.index-exists]
+type          = "shell"
+command       = "test -f {{tardigrade_root}}/koala/index.html && echo present || echo missing"
+expect_output = "present"
+tags          = ["smoke"]
+
+[services.koala-ui.verify.tests.ui-page-loads]
+type          = "ui"
+url           = "https://127.0.0.1:8443/koala/"
+expect_status = 200
+selector      = "div[id='root']"
+tags          = ["smoke"]

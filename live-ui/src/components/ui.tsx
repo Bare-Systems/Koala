@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { ActivityItem, CameraCard, LiveTab, Tone } from '../lib/types'
+import type { ActivityItem, CameraCard, HomeDevice, LiveTab, Tone } from '../lib/types'
 
 const tabs: Array<{ id: LiveTab; label: string; eyebrow: string }> = [
   { id: 'home', label: 'Home', eyebrow: 'Live' },
   { id: 'activity', label: 'Activity', eyebrow: 'Alerts' },
   { id: 'cameras', label: 'Cameras', eyebrow: 'Views' },
+  { id: 'climate', label: 'Climate', eyebrow: 'Air & Weather' },
   { id: 'profile', label: 'Profile', eyebrow: 'Household' },
 ]
 
@@ -164,5 +165,46 @@ export function ToggleRow({ label, detail, checked, onChange }: ToggleRowProps) 
         type="checkbox"
       />
     </label>
+  )
+}
+
+export type DeviceAction = 'lock' | 'unlock' | 'open' | 'close'
+
+type DeviceRowProps = {
+  device: HomeDevice
+  onAction: (deviceId: string, action: DeviceAction) => void
+}
+
+export function DeviceRow({ device, onAction }: DeviceRowProps) {
+  const stateLabel = device.lockState ?? device.openState ?? device.statusLabel ?? 'unknown'
+  const isLocked = device.lockState === 'locked'
+  const isOpen = device.openState === 'open'
+
+  return (
+    <div className="device-row">
+      <div className="device-row-info">
+        <strong>{device.name}</strong>
+        <span className="device-zone">{device.zone}</span>
+      </div>
+      <StatusPill label={stateLabel} tone={device.tone} />
+      {device.type === 'lock' && device.lockState !== 'unknown' && (
+        <button
+          className={isLocked ? 'ghost-button' : 'device-action-warn'}
+          onClick={() => onAction(device.id, isLocked ? 'unlock' : 'lock')}
+          type="button"
+        >
+          {isLocked ? 'Unlock' : 'Lock'}
+        </button>
+      )}
+      {(device.type === 'door' || device.type === 'window') && device.openState !== 'unknown' && (
+        <button
+          className="ghost-button"
+          onClick={() => onAction(device.id, isOpen ? 'close' : 'open')}
+          type="button"
+        >
+          {isOpen ? 'Close' : 'Open'}
+        </button>
+      )}
+    </div>
   )
 }
