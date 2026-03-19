@@ -20,3 +20,6 @@ PLAN*.md
 # Deployment symlink
 suite/
 blink/
+# Vendored deps and wheels (local only)
+vendor/
+worker-wheels/
