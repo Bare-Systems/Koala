@@ -21,6 +21,22 @@ go run ./cmd/koala-orchestrator -config configs/koala.yaml
 python -m koala_worker.server
 ```
 
+## Blink Homelab Contract
+
+The stable `blink` deployment shape is:
+
+- `blink` host: `192.168.86.53`
+- DVR: `192.168.86.46`
+- BearClaw and Koala Live call Koala at `http://192.168.86.53:8082`
+- The camera-facing orchestrator runs on host networking
+- The worker stays on bridge networking and is published on `8092`
+
+That host-network orchestrator requirement is not optional on `blink`. During
+the March 20, 2026 outage, the host could reach the DVR while Docker bridge
+containers could not. If the host can reach cameras and containers cannot, do
+not change camera code first. Preserve the network pattern in
+`docs/homelab-networking.md`.
+
 ## MCP tools
 
 All tools require `Authorization: Bearer <mcp_token>`.
@@ -117,6 +133,9 @@ Current implementation captures snapshots via `ffmpeg`, so `ffmpeg` must be inst
 Ingest workers include watchdog + auto-reconnect behavior, and `/admin/ingest/status` now returns recent incident events (`stream_failure`, `stream_stalled`, `stream_recovered`) for MCP-visible operations monitoring.
 
 Camera probing supports RTSP-first checks with ONVIF fallback probing (`camera.onvif_url`); ONVIF reachability is surfaced in `list_cameras` capability data.
+
+For the `blink` homelab deployment shape and the Docker-to-LAN camera networking
+workaround, see `docs/homelab-networking.md`.
 
 Staging/apply storage:
 

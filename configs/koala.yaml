@@ -1,6 +1,6 @@
 config_version: "1"
 listen_addr: ":8080"
-mcp_token: "change-me"
+mcp_token: "koala-dev-token"
 service:
   device_id: "koala-jetson-frontdoor-01"
   version: "0.1.0-dev"

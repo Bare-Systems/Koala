@@ -49,6 +49,16 @@ Files:
 ### 4) Documentation updates
 - Updated `README.md` with stream incident behavior, ONVIF fallback notes, and replay gate test command.
 
+### 5) Homelab camera networking note (March 20, 2026)
+- On `blink`, the host could reach the DVR at `192.168.86.46`, but Docker bridge
+  containers could not.
+- The operational workaround was to run the camera-facing orchestrator on host
+  networking and route worker traffic through the worker's published host port.
+- Added:
+  - `docs/examples/docker-compose.homelab.yml`
+  - `configs/koala.homelab.yaml`
+  - `docs/homelab-networking.md`
+
 ## Existing Major Platform Features Already Landed (Earlier Iterations)
 - Secure update flow with signed manifest and encrypted/signed bundle support.
 - Key rotation support (`active_key_id`, `previous_keys`, keyring).
@@ -84,4 +94,3 @@ Files:
   - `README.md`
   - `docs/HANDOFF.md`
   - `PLAN.md` (roadmap source of truth)
-

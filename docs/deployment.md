@@ -37,11 +37,19 @@ Linux host with Docker Compose (development/staging).
 Network access to cameras (RTSP/ONVIF) is required from the host running the
 orchestrator.
 
+If you are deploying on the `blink` homelab or another Docker-in-LXC style
+environment, also read `docs/homelab-networking.md`. In that environment the
+host could reach the DVR while Docker bridge containers could not, and the
+camera-facing orchestrator had to run on host networking.
+
 ---
 
 ## Docker Compose (quick start)
 
 This is the fastest way to get Koala running locally or on a staging host.
+For the `blink` homelab specifically, prefer
+`docs/examples/docker-compose.homelab.yml` plus `configs/koala.homelab.yaml`
+over the default bridge-only compose file.
 
 ### 1 — Clone and configure
 
@@ -82,7 +90,7 @@ docker compose up --build -d
 ### 3 — Verify
 
 ```bash
-curl http://localhost:8080/health
+curl http://localhost:8080/healthz
 # → {"status":"ok"}
 
 curl -s -X POST http://localhost:8080/mcp/tools/koala.get_system_health \
@@ -90,6 +98,9 @@ curl -s -X POST http://localhost:8080/mcp/tools/koala.get_system_health \
   -H "Content-Type: application/json" \
   -d '{"input":{}}' | jq .
 ```
+
+If camera reachability fails only from inside containers, switch to the host
+networking pattern documented in `docs/homelab-networking.md`.
 
 ---
 
