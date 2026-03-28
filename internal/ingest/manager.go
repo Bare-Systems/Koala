@@ -1,8 +1,11 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"image"
+	_ "image/jpeg"
 	"sync"
 	"time"
 
@@ -38,6 +41,8 @@ type CameraStats struct {
 	LastError           string        `json:"last_error,omitempty"`
 	LastCaptureAt       string        `json:"last_capture_at,omitempty"`
 	LastStatus          camera.Status `json:"last_status"`
+	FrameWidth          int           `json:"frame_width,omitempty"`
+	FrameHeight         int           `json:"frame_height,omitempty"`
 }
 
 type Incident struct {
@@ -178,6 +183,7 @@ func (m *Manager) runCamera(ctx context.Context, cam camera.Camera) {
 			m.latestFrames[cam.ID] = frame
 			m.latestFramesMu.Unlock()
 
+			fw, fh := jpegDimensions(frame)
 			m.registry.SetStatus(cam.ID, camera.StatusAvailable)
 			now := time.Now().UTC()
 			accepted := m.submitter.Submit(service.FrameTask{
@@ -196,6 +202,10 @@ func (m *Manager) runCamera(ctx context.Context, cam camera.Camera) {
 				s.LastError = ""
 				s.LastCaptureAt = now.Format(time.RFC3339)
 				s.LastStatus = camera.StatusAvailable
+				if fw > 0 {
+					s.FrameWidth = fw
+					s.FrameHeight = fh
+				}
 				if accepted {
 					s.Submitted++
 				} else {
@@ -333,4 +343,14 @@ func maxDuration(a time.Duration, b time.Duration) time.Duration {
 		return a
 	}
 	return b
+}
+
+// jpegDimensions returns the pixel dimensions of a JPEG frame by parsing its
+// header without fully decoding the image. Returns zeros on any parse error.
+func jpegDimensions(data []byte) (width, height int) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return 0, 0
+	}
+	return cfg.Width, cfg.Height
 }

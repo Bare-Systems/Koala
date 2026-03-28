@@ -1,12 +1,15 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/jpeg"
 	"log"
 	"net/http"
 	"strconv"
@@ -455,6 +458,10 @@ func (s *Server) cameraSnapshot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.Header().Set("Content-Length", strconv.Itoa(len(frame)))
+	if cfg, _, err := image.DecodeConfig(bytes.NewReader(frame)); err == nil {
+		w.Header().Set("X-Frame-Width", strconv.Itoa(cfg.Width))
+		w.Header().Set("X-Frame-Height", strconv.Itoa(cfg.Height))
+	}
 	_, _ = w.Write(frame)
 }
 
