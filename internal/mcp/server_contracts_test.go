@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baresystems/koala/internal/camera"
-	"github.com/baresystems/koala/internal/service"
-	"github.com/baresystems/koala/internal/state"
+	"github.com/Bare-Systems/Koala/internal/camera"
+	"github.com/Bare-Systems/Koala/internal/service"
+	"github.com/Bare-Systems/Koala/internal/state"
 )
 
 // assertToolResponse decodes the response body as a ToolResponse and returns it.

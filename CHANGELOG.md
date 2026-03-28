@@ -106,5 +106,5 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-[Unreleased]: https://github.com/baresystems/koala/compare/v0.1.0-dev...HEAD
-[0.1.0-dev]: https://github.com/baresystems/koala/releases/tag/v0.1.0-dev
+[Unreleased]: https://github.com/Bare-Systems/Koala/compare/v0.1.0-dev...HEAD
+[0.1.0-dev]: https://github.com/Bare-Systems/Koala/releases/tag/v0.1.0-dev

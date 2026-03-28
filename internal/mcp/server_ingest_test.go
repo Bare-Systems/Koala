@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baresystems/koala/internal/camera"
-	"github.com/baresystems/koala/internal/ingest"
-	"github.com/baresystems/koala/internal/service"
-	"github.com/baresystems/koala/internal/state"
+	"github.com/Bare-Systems/Koala/internal/camera"
+	"github.com/Bare-Systems/Koala/internal/ingest"
+	"github.com/Bare-Systems/Koala/internal/service"
+	"github.com/Bare-Systems/Koala/internal/state"
 )
 
 type staticSnapshotter struct{}

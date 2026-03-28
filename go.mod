@@ -1,4 +1,4 @@
-module github.com/baresystems/koala
+module github.com/Bare-Systems/Koala
 
 go 1.24.0
 

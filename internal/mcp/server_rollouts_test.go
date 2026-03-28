@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baresystems/koala/internal/camera"
-	"github.com/baresystems/koala/internal/service"
-	"github.com/baresystems/koala/internal/state"
-	"github.com/baresystems/koala/internal/update"
+	"github.com/Bare-Systems/Koala/internal/camera"
+	"github.com/Bare-Systems/Koala/internal/service"
+	"github.com/Bare-Systems/Koala/internal/state"
+	"github.com/Bare-Systems/Koala/internal/update"
 )
 
 func rolloutManifestInputJSON() string {

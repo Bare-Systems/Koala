@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/baresystems/koala/internal/camera"
-	"github.com/baresystems/koala/internal/service"
+	"github.com/Bare-Systems/Koala/internal/camera"
+	"github.com/Bare-Systems/Koala/internal/service"
 )
 
 type Submitter interface {

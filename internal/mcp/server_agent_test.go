@@ -25,9 +25,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baresystems/koala/internal/camera"
-	"github.com/baresystems/koala/internal/service"
-	"github.com/baresystems/koala/internal/state"
+	"github.com/Bare-Systems/Koala/internal/camera"
+	"github.com/Bare-Systems/Koala/internal/service"
+	"github.com/Bare-Systems/Koala/internal/state"
 )
 
 // intentFixture is one entry in tests/fixtures/agent/intents.json.

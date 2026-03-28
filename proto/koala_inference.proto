@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package koala.inference.v1;
 
-option go_package = "github.com/baresystems/koala/proto/inferencev1";
+option go_package = "github.com/Bare-Systems/Koala/proto/inferencev1";
 
 // contract_version is embedded in every FrameRequest so orchestrator and worker
 // can detect version mismatches without an out-of-band handshake.

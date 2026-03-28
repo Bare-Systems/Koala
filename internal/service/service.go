@@ -7,11 +7,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/baresystems/koala/internal/camera"
-	"github.com/baresystems/koala/internal/inference"
-	"github.com/baresystems/koala/internal/state"
-	"github.com/baresystems/koala/internal/telemetry"
-	"github.com/baresystems/koala/internal/zone"
+	"github.com/Bare-Systems/Koala/internal/camera"
+	"github.com/Bare-Systems/Koala/internal/inference"
+	"github.com/Bare-Systems/Koala/internal/state"
+	"github.com/Bare-Systems/Koala/internal/telemetry"
+	"github.com/Bare-Systems/Koala/internal/zone"
 )
 
 const defaultMinBBoxOverlap = 0.3

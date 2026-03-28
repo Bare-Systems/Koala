@@ -11,16 +11,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/baresystems/koala/internal/audit"
-	"github.com/baresystems/koala/internal/camera"
-	"github.com/baresystems/koala/internal/config"
-	"github.com/baresystems/koala/internal/inference"
-	"github.com/baresystems/koala/internal/ingest"
-	"github.com/baresystems/koala/internal/mcp"
-	"github.com/baresystems/koala/internal/service"
-	"github.com/baresystems/koala/internal/state"
-	"github.com/baresystems/koala/internal/update"
-	"github.com/baresystems/koala/internal/zone"
+	"github.com/Bare-Systems/Koala/internal/audit"
+	"github.com/Bare-Systems/Koala/internal/camera"
+	"github.com/Bare-Systems/Koala/internal/config"
+	"github.com/Bare-Systems/Koala/internal/inference"
+	"github.com/Bare-Systems/Koala/internal/ingest"
+	"github.com/Bare-Systems/Koala/internal/mcp"
+	"github.com/Bare-Systems/Koala/internal/service"
+	"github.com/Bare-Systems/Koala/internal/state"
+	"github.com/Bare-Systems/Koala/internal/update"
+	"github.com/Bare-Systems/Koala/internal/zone"
 )
 
 func main() {

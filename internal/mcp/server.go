@@ -14,10 +14,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/baresystems/koala/internal/audit"
-	"github.com/baresystems/koala/internal/ingest"
-	"github.com/baresystems/koala/internal/service"
-	"github.com/baresystems/koala/internal/update"
+	"github.com/Bare-Systems/Koala/internal/audit"
+	"github.com/Bare-Systems/Koala/internal/ingest"
+	"github.com/Bare-Systems/Koala/internal/service"
+	"github.com/Bare-Systems/Koala/internal/update"
 )
 
 const (
