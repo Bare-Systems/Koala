@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"image"
 	_ "image/jpeg"
+	"log"
 	"sync"
 	"time"
 
@@ -193,6 +195,8 @@ func (m *Manager) runCamera(ctx context.Context, cam camera.Camera) {
 				Captured: now,
 			})
 			recovered := false
+			firstFrame := false
+			lowRes := false
 			m.increment(cam.ID, func(s *CameraStats) {
 				if s.ConsecutiveFailures > 0 {
 					recovered = true
@@ -203,6 +207,10 @@ func (m *Manager) runCamera(ctx context.Context, cam camera.Camera) {
 				s.LastCaptureAt = now.Format(time.RFC3339)
 				s.LastStatus = camera.StatusAvailable
 				if fw > 0 {
+					if s.FrameWidth == 0 {
+						firstFrame = true
+						lowRes = fw < 640
+					}
 					s.FrameWidth = fw
 					s.FrameHeight = fh
 				}
@@ -212,6 +220,20 @@ func (m *Manager) runCamera(ctx context.Context, cam camera.Camera) {
 					s.Dropped++
 				}
 			})
+			if firstFrame {
+				log.Printf("ingest: camera id=%s resolution=%dx%d", cam.ID, fw, fh)
+			}
+			if lowRes {
+				m.statsMu.Lock()
+				m.recordIncidentLocked(Incident{
+					CameraID:   cam.ID,
+					Type:       "low_resolution",
+					Severity:   "medium",
+					Message:    fmt.Sprintf("stream resolution %dx%d is below 640px wide; check DVR encode settings", fw, fh),
+					OccurredAt: now.Format(time.RFC3339),
+				})
+				m.statsMu.Unlock()
+			}
 			m.onRecovery(cam.ID, recovered)
 		}
 	}
