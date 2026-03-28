@@ -25,3 +25,5 @@ blink
 # Vendored deps and wheels (local only)
 vendor/
 worker-wheels/
+dist/
+configs/koala.homelab.yaml
