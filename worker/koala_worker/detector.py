@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import io
+import os
 from dataclasses import dataclass, field
 from datetime import timezone
 from typing import Any
@@ -18,6 +21,29 @@ LABEL_MAP: dict[str, str] = {
     "suitcase": "package",
     "backpack": "package",
     "handbag": "package",
+    # YOLO COCO vehicle classes
+    "car": "vehicle",
+    "truck": "vehicle",
+    "bus": "vehicle",
+    "motorcycle": "vehicle",
+    "bicycle": "vehicle",
+    # YOLO COCO animal classes
+    "dog": "animal",
+    "cat": "animal",
+    "bird": "animal",
+    "horse": "animal",
+    "sheep": "animal",
+    "cow": "animal",
+    "bear": "animal",
+    "elephant": "animal",
+    "zebra": "animal",
+    "giraffe": "animal",
+    "deer": "animal",
+    "fox": "animal",
+    "rabbit": "animal",
+    "squirrel": "animal",
+    "raccoon": "animal",
+    "skunk": "animal",
 }
 
 
@@ -25,6 +51,8 @@ LABEL_MAP: dict[str, str] = {
 class DetectorConfig:
     package_threshold: float = 0.55
     person_threshold: float = 0.50
+    animal_threshold: float = 0.55
+    vehicle_threshold: float = 0.50
     # Per-camera label threshold overrides: {camera_id: {label: threshold}}
     # Falls back to the global threshold when a camera_id is not present.
     camera_thresholds: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -38,6 +66,10 @@ class DetectorConfig:
             return self.package_threshold
         if label == "person":
             return self.person_threshold
+        if label == "animal":
+            return self.animal_threshold
+        if label == "vehicle":
+            return self.vehicle_threshold
         return 1.0  # unknown label: reject by default
 
 
@@ -52,7 +84,9 @@ class YoloDetector:
         try:
             from ultralytics import YOLO  # type: ignore
 
-            return YOLO("yolov8n.pt")
+            model_dir = os.environ.get("KOALA_MODEL_DIR", ".")
+            model_path = os.path.join(model_dir, "yolov8n.pt")
+            return YOLO(model_path)
         except Exception:
             return None
 
@@ -83,7 +117,11 @@ class YoloDetector:
 
     def _run_model(self, req: AnalyzeRequest) -> list[Detection]:
         # The actual Jetson path can be swapped to TensorRT export while preserving output schema.
-        raw_output = self._model.predict(req.frame_b64 or "", verbose=False)
+        from PIL import Image  # type: ignore  # provided by ultralytics deps
+
+        frame_bytes = base64.b64decode(req.frame_b64 or "")
+        image = Image.open(io.BytesIO(frame_bytes))
+        raw_output = self._model.predict(image, verbose=False)
         detections: list[Detection] = []
         ts = req.captured_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         for result in raw_output:

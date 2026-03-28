@@ -21,6 +21,67 @@ go run ./cmd/koala-orchestrator -config configs/koala.yaml
 python -m koala_worker.server
 ```
 
+## Edge Device Deployment (Jetson)
+
+Code deploys are automated via blink:
+
+```bash
+blink deploy koala-worker
+blink deploy koala-orchestrator
+```
+
+**One-time GPU setup — must be done manually on the Jetson before first deploy.**
+Blink does not handle this because the install takes several minutes and is a system-level
+operation that only needs to happen once per device.
+
+```bash
+# SSH into the Jetson, then:
+
+# 1. System packages
+sudo apt-get install -y python3-pip libopenblas-dev
+
+# 2. cuSPARSELt — required for PyTorch 24.06+ builds
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt-get update
+sudo apt-get install -y libcusparselt0 libcusparselt-dev
+
+# 3. numpy pinned version
+pip3 install 'numpy==1.26.1'
+
+# 4. PyTorch 2.5.0 — official NVIDIA wheel for JetPack 6.1 / R36.4 / Python 3.10
+#    Source: https://docs.nvidia.com/deeplearning/frameworks/install-pytorch-jetson-platform/
+pip3 install --no-cache \
+  https://developer.download.nvidia.com/compute/redist/jp/v61/pytorch/torch-2.5.0a0+872d972e41.nv24.08.17622132-cp310-cp310-linux_aarch64.whl
+
+# 5. Install ultralytics (YOLO) — do this BEFORE verifying torch
+#    ultralytics will pull in a CPU-only torch from PyPI; we overwrite it next
+pip3 install ultralytics
+
+# 6. Re-pin the NVIDIA CUDA torch — ultralytics upgrades it to a CPU build from PyPI
+pip3 install --no-cache --force-reinstall \
+  https://developer.download.nvidia.com/compute/redist/jp/v61/pytorch/torch-2.5.0a0+872d972e41.nv24.08.17622132-cp310-cp310-linux_aarch64.whl
+
+# 7. Verify CUDA is available (must print True)
+python3 -c 'import torch; print(torch.__version__); print("cuda:", torch.cuda.is_available())'
+```
+
+After the one-time setup, restart the worker and confirm GPU inference is live:
+
+```bash
+blink restart koala-worker
+blink test koala-worker --tags gpu   # passes when cuda=True
+```
+
+On first start after GPU setup, the worker downloads `yolov8n.pt` (~6 MB) into
+`$KOALA_MODEL_DIR` (default: `~/baresystems/runtime/koala/worker/models/`).
+Subsequent starts load the cached model. YOLO detects `person`, `package`, and
+`animal` labels; without GPU setup the worker falls back to a deterministic stub.
+
+See `BLINK.md` for the supported Jetson deployment contract and operator notes for the current managed deployment shape.
+
+---
+
 ## Blink Homelab Contract
 
 The stable `blink` deployment shape is:
@@ -34,8 +95,8 @@ The stable `blink` deployment shape is:
 That host-network orchestrator requirement is not optional on `blink`. During
 the March 20, 2026 outage, the host could reach the DVR while Docker bridge
 containers could not. If the host can reach cameras and containers cannot, do
-not change camera code first. Preserve the network pattern in
-`docs/homelab-networking.md`.
+not change camera code first. Preserve that network pattern as part of the
+supported deployment contract described in `BLINK.md`.
 
 ## MCP tools
 
@@ -135,7 +196,7 @@ Ingest workers include watchdog + auto-reconnect behavior, and `/admin/ingest/st
 Camera probing supports RTSP-first checks with ONVIF fallback probing (`camera.onvif_url`); ONVIF reachability is surfaced in `list_cameras` capability data.
 
 For the `blink` homelab deployment shape and the Docker-to-LAN camera networking
-workaround, see `docs/homelab-networking.md`.
+workaround, see `BLINK.md`.
 
 Staging/apply storage:
 

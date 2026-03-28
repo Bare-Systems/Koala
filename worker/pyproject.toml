@@ -2,7 +2,7 @@
 name = "koala-worker"
 version = "0.1.0"
 description = "Koala Python inference worker"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "grpcio>=1.60.0",
     "protobuf>=4.25.0",
@@ -10,6 +10,8 @@ dependencies = [
 
 [project.optional-dependencies]
 inference = ["ultralytics>=8.0"]
+# gpu: use this on Jetson — install NVIDIA PyTorch wheel first, then pip install -e ".[gpu]"
+gpu = ["ultralytics>=8.0"]
 
 [project.scripts]
 koala-worker = "koala_worker.server:main"
