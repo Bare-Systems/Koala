@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+#### Stream Ingest
+- Per-camera frame resolution (`frame_width`, `frame_height`) tracked in `CameraStats` and exposed in `/admin/ingest/status`
+- `X-Frame-Width` / `X-Frame-Height` response headers on `/admin/cameras/{id}/snapshot`
+- Resolution logged on first frame capture per camera (`ingest: camera id=X resolution=WxH`)
+- `low_resolution` incident (severity: medium) recorded automatically when a stream's width is below 640px, surfacing DVR encode misconfigurations (e.g. CIF/QCIF instead of 720P/1080P) without manual investigation
+
 ---
 
 ## [0.1.0-dev] — 2026-03-14
