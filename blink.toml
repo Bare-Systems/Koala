@@ -123,7 +123,7 @@ tags          = ["gpu"]
 
 [services.koala-worker.verify.tests.live-detections]
 type          = "shell"
-command       = "curl -sf -X POST http://127.0.0.1:8082/mcp/tools/koala.get_zone_state -H 'Authorization: Bearer koala-dev-token' -H 'Content-Type: application/json' -d '{\"input\":{\"zone_id\":\"front_door\"}}' 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); stale=data.get('stale',True); entities={e['label']:e['present'] for e in data.get('entities',[])}; present=[k for k,v in entities.items() if v]; print('ok stale=' + str(stale) + ' present=' + str(present if present else 'none'))\" 2>/dev/null || echo 'ok stale=error'"
+command       = "curl -sf -X POST http://127.0.0.1:8082/mcp/tools/koala.get_zone_state -H 'Authorization: Bearer $(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env | cut -d= -f2-)' -H 'Content-Type: application/json' -d '{\"input\":{\"zone_id\":\"front_door\"}}' 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); stale=data.get('stale',True); entities={e['label']:e['present'] for e in data.get('entities',[])}; present=[k for k,v in entities.items() if v]; print('ok stale=' + str(stale) + ' present=' + str(present if present else 'none'))\" 2>/dev/null || echo 'ok stale=error'"
 expect_output = "ok stale=True present=none"
 tags          = ["live"]
 
@@ -135,13 +135,13 @@ tags          = ["gpu-diag"]
 
 [services.koala-worker.verify.tests.zone-state-raw]
 type          = "shell"
-command       = "curl -sf -X POST http://127.0.0.1:8082/mcp/tools/koala.get_zone_state -H 'Authorization: Bearer koala-dev-token' -H 'Content-Type: application/json' -d '{\"input\":{\"zone_id\":\"front_door\"}}' 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps(d,indent=None))' 2>/dev/null | cut -c1-300"
+command       = "curl -sf -X POST http://127.0.0.1:8082/mcp/tools/koala.get_zone_state -H 'Authorization: Bearer $(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env | cut -d= -f2-)' -H 'Content-Type: application/json' -d '{\"input\":{\"zone_id\":\"front_door\"}}' 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps(d,indent=None))' 2>/dev/null | cut -c1-300"
 expect_output = ""
 tags          = ["zone-raw"]
 
 [services.koala-worker.verify.tests.ingest-status]
 type          = "shell"
-command       = "curl -sf http://127.0.0.1:8082/admin/ingest/status -H 'Authorization: Bearer koala-dev-token' 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); cams=d.get(\"data\",{}).get(\"cameras\",{}); print(json.dumps({k:{\"ok\":v.get(\"success_count\",0),\"fail\":v.get(\"failure_count\",0),\"last_err\":v.get(\"last_error\",\"\")} for k,v in cams.items()}))' 2>/dev/null | cut -c1-400"
+command       = "curl -sf http://127.0.0.1:8082/admin/ingest/status -H 'Authorization: Bearer $(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env | cut -d= -f2-)' 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); cams=d.get(\"data\",{}).get(\"cameras\",{}); print(json.dumps({k:{\"ok\":v.get(\"success_count\",0),\"fail\":v.get(\"failure_count\",0),\"last_err\":v.get(\"last_error\",\"\")} for k,v in cams.items()}))' 2>/dev/null | cut -c1-400"
 expect_output = ""
 tags          = ["ingest"]
 
@@ -166,7 +166,7 @@ tags          = ["dvr-info"]
 
 [services.koala-worker.verify.tests.ingest-raw]
 type          = "shell"
-command       = "curl -sf http://127.0.0.1:8082/admin/ingest/status -H 'Authorization: Bearer koala-dev-token' 2>/dev/null | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin),indent=None))' | cut -c1-600"
+command       = "curl -sf http://127.0.0.1:8082/admin/ingest/status -H 'Authorization: Bearer $(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env | cut -d= -f2-)' 2>/dev/null | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin),indent=None))' | cut -c1-600"
 expect_output = ""
 tags          = ["ingest-raw"]
 
@@ -245,10 +245,11 @@ dirs = [
 ]
 script = """
 CONFIG={{runtime_dir}}/orchestrator/data/koala.yaml
-cat > "$CONFIG" << 'KOALA_CONFIG'
+MCP_TOKEN=$(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env 2>/dev/null | cut -d= -f2- | tr -d '"' || echo 'replace-me')
+cat > "$CONFIG" << KOALA_CONFIG
 config_version: "1"
 listen_addr: ":8082"
-mcp_token: "koala-dev-token"
+mcp_token: "$MCP_TOKEN"
 service:
   device_id: "koala-jetson-01"
   version: "0.1.0-dev"
@@ -327,8 +328,8 @@ echo "Wrote koala.yaml with 8 cameras."
 path = "{{runtime_dir}}/orchestrator/koala-orchestrator.env"
 
 [services.koala-orchestrator.provision.env_file.seed]
-KOALA_MCP_TOKEN  = "replace-me"
-KOALA_DEVICE_ID  = "jetson-01"
+KOALA_MCP_TOKEN  = "${KOALA_MCP_TOKEN}"
+KOALA_DEVICE_ID  = "${KOALA_DEVICE_ID}"
 
 # ── Install ───────────────────────────────────────────────────────────────────
 

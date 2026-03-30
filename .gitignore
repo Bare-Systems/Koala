@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 
+# Secrets — never commit
+.env
+*.env
+
 
 # Agent Context
 changes/
