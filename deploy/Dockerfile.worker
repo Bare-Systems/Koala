@@ -2,5 +2,5 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY worker /app/worker
 RUN pip install --no-cache-dir -e /app/worker
-EXPOSE 8090
+EXPOSE 6704
 ENTRYPOINT ["koala-worker"]

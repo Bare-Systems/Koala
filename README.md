@@ -88,7 +88,7 @@ The stable `blink` deployment shape is:
 
 - `blink` host: `192.168.86.53`
 - DVR: `192.168.86.46`
-- BearClaw and Koala Live call Koala at `http://192.168.86.53:8082`
+- BearClaw and Koala Live call Koala at `http://192.168.86.53:6705`
 - The camera-facing orchestrator runs on host networking
 - The worker stays on bridge networking and is published on `8092`
 

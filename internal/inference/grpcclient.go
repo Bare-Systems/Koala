@@ -54,7 +54,7 @@ type GRPCClient struct {
 }
 
 // NewGRPCClient creates a gRPC inference client with a circuit breaker.
-// target should be a gRPC address such as "localhost:50051".
+// target should be a gRPC address such as "localhost:6706".
 // failureThreshold is the number of consecutive failures before tripping the circuit.
 // openDuration is how long to wait before allowing a probe request through.
 func NewGRPCClient(target string, failureThreshold int, openDuration time.Duration) (*GRPCClient, error) {

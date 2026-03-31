@@ -55,7 +55,7 @@ class WorkerHandler(BaseHTTPRequestHandler):
 
 
 def _serve_http() -> None:
-    server = ThreadingHTTPServer(("0.0.0.0", 8090), WorkerHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", 6704), WorkerHandler)
     server.serve_forever()
 
 

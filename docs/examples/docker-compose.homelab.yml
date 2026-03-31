@@ -6,10 +6,10 @@ services:
     environment:
       KOALA_TRANSPORT: "http"
     ports:
-      - "8092:8090"
+      - "8092:6704"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/v1/health', timeout=5)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6704/v1/health', timeout=5)"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -27,7 +27,7 @@ services:
       - ../../configs/koala.homelab.yaml:/app/configs/koala.yaml:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8082/healthz > /dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:6705/healthz > /dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -38,7 +38,7 @@ services:
       context: ../..
       dockerfile: deploy/Dockerfile.live-ui
       args:
-        VITE_KOALA_API_BASE_URL: "http://192.168.86.53:8082"
+        VITE_KOALA_API_BASE_URL: "http://192.168.86.53:6705"
         VITE_KOALA_TOKEN: "koala-dev-token"
     ports:
       - "9081:80"

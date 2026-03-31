@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: deploy/Dockerfile.worker
     ports:
-      - "8090:8090"
+      - "6704:6704"
 
   koala-orchestrator:
     build:

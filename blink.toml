@@ -10,13 +10,13 @@ user        = "joe"
 base        = "/home/joe/baresystems"
 runtime_dir = "/home/joe/baresystems/runtime/koala"
 publish_host = "jetson"           # update with Jetson's LAN IP
-api_port    = "8082"
+api_port    = "6705"
 grpc_port   = "6706"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # koala-worker — Python inference worker (YOLO)
 # Target: Jetson Orin Nano (native Python, no Docker)
-# Port: 8090 (HTTP)
+# Port: 6704 (HTTP)
 #
 # Build: wheel built locally, scp'd to Jetson, pip-installed there.
 # One-time Jetson setup: pip3 install grpcio ultralytics
@@ -24,7 +24,7 @@ grpc_port   = "6706"
 
 [services.koala-worker]
 description  = "Koala inference worker — YOLO object detection"
-port         = "8090"
+port         = "6704"
 service_name = "koala-worker"
 
 [services.koala-worker.logs]
@@ -84,7 +84,7 @@ dest = "runtime/koala/worker/koala_worker-latest.whl"
 # ── Stop ──────────────────────────────────────────────────────────────────────
 
 [services.koala-worker.stop]
-command = "pkill -f 'koala_worker' 2>/dev/null || true; sleep 2; fuser -k 8090/tcp 2>/dev/null || true; sleep 1"
+command = "pkill -f 'koala_worker' 2>/dev/null || true; sleep 2; fuser -k 6704/tcp 2>/dev/null || true; sleep 1"
 
 # ── Start: install wheel then launch ─────────────────────────────────────────
 
@@ -123,7 +123,7 @@ tags          = ["gpu"]
 
 [services.koala-worker.verify.tests.live-detections]
 type          = "shell"
-command       = "curl -sf -X POST http://127.0.0.1:8082/mcp/tools/koala.get_zone_state -H 'Authorization: Bearer $(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env | cut -d= -f2-)' -H 'Content-Type: application/json' -d '{\"input\":{\"zone_id\":\"front_door\"}}' 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); stale=data.get('stale',True); entities={e['label']:e['present'] for e in data.get('entities',[])}; present=[k for k,v in entities.items() if v]; print('ok stale=' + str(stale) + ' present=' + str(present if present else 'none'))\" 2>/dev/null || echo 'ok stale=error'"
+command       = "curl -sf -X POST http://127.0.0.1:6705/mcp/tools/koala.get_zone_state -H 'Authorization: Bearer $(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env | cut -d= -f2-)' -H 'Content-Type: application/json' -d '{\"input\":{\"zone_id\":\"front_door\"}}' 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); data=d.get('data',{}); stale=data.get('stale',True); entities={e['label']:e['present'] for e in data.get('entities',[])}; present=[k for k,v in entities.items() if v]; print('ok stale=' + str(stale) + ' present=' + str(present if present else 'none'))\" 2>/dev/null || echo 'ok stale=error'"
 expect_output = "ok stale=True present=none"
 tags          = ["live"]
 
@@ -135,13 +135,13 @@ tags          = ["gpu-diag"]
 
 [services.koala-worker.verify.tests.zone-state-raw]
 type          = "shell"
-command       = "curl -sf -X POST http://127.0.0.1:8082/mcp/tools/koala.get_zone_state -H 'Authorization: Bearer $(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env | cut -d= -f2-)' -H 'Content-Type: application/json' -d '{\"input\":{\"zone_id\":\"front_door\"}}' 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps(d,indent=None))' 2>/dev/null | cut -c1-300"
+command       = "curl -sf -X POST http://127.0.0.1:6705/mcp/tools/koala.get_zone_state -H 'Authorization: Bearer $(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env | cut -d= -f2-)' -H 'Content-Type: application/json' -d '{\"input\":{\"zone_id\":\"front_door\"}}' 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps(d,indent=None))' 2>/dev/null | cut -c1-300"
 expect_output = ""
 tags          = ["zone-raw"]
 
 [services.koala-worker.verify.tests.ingest-status]
 type          = "shell"
-command       = "curl -sf http://127.0.0.1:8082/admin/ingest/status -H 'Authorization: Bearer $(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env | cut -d= -f2-)' 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); cams=d.get(\"data\",{}).get(\"cameras\",{}); print(json.dumps({k:{\"ok\":v.get(\"success_count\",0),\"fail\":v.get(\"failure_count\",0),\"last_err\":v.get(\"last_error\",\"\")} for k,v in cams.items()}))' 2>/dev/null | cut -c1-400"
+command       = "curl -sf http://127.0.0.1:6705/admin/ingest/status -H 'Authorization: Bearer $(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env | cut -d= -f2-)' 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); cams=d.get(\"data\",{}).get(\"cameras\",{}); print(json.dumps({k:{\"ok\":v.get(\"success_count\",0),\"fail\":v.get(\"failure_count\",0),\"last_err\":v.get(\"last_error\",\"\")} for k,v in cams.items()}))' 2>/dev/null | cut -c1-400"
 expect_output = ""
 tags          = ["ingest"]
 
@@ -166,7 +166,7 @@ tags          = ["dvr-info"]
 
 [services.koala-worker.verify.tests.ingest-raw]
 type          = "shell"
-command       = "curl -sf http://127.0.0.1:8082/admin/ingest/status -H 'Authorization: Bearer $(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env | cut -d= -f2-)' 2>/dev/null | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin),indent=None))' | cut -c1-600"
+command       = "curl -sf http://127.0.0.1:6705/admin/ingest/status -H 'Authorization: Bearer $(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env | cut -d= -f2-)' 2>/dev/null | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin),indent=None))' | cut -c1-600"
 expect_output = ""
 tags          = ["ingest-raw"]
 
@@ -180,7 +180,7 @@ tags          = ["model"]
 # Diagnostic only (expect_output="") — read the failure message for actual detection output.
 [services.koala-worker.verify.tests.snap-detect]
 type          = "shell"
-command       = "for CAM in 1 6; do ffmpeg -y -rtsp_transport tcp -i \"rtsp://192.168.86.46:554/user=admin&password=&channel=${CAM}&stream=0.sdp?real_stream\" -frames:v 1 -vf scale=640:-1 -f image2 /tmp/ks${CAM}.jpg -loglevel quiet 2>/dev/null; python3 -c \"import base64,json,urllib.request,datetime; cam='cam_${CAM}'; b64=base64.b64encode(open('/tmp/ks${CAM}.jpg','rb').read()).decode(); now=datetime.datetime.now(datetime.timezone.utc).isoformat(); body=json.dumps({'camera_id':cam,'zone_id':'front_door','frame_b64':b64,'captured_at':now}).encode(); resp=urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8090/v1/analyze/frame',body,{'Content-Type':'application/json'}),timeout=30); dets=json.loads(resp.read()).get('detections',[]); print(cam+': '+(', '.join(x['label']+'('+str(round(x['confidence'],2))+')' for x in dets) or 'none'))\" 2>/dev/null || echo \"cam_${CAM}: error\"; done"
+command       = "for CAM in 1 6; do ffmpeg -y -rtsp_transport tcp -i \"rtsp://192.168.86.46:554/user=admin&password=&channel=${CAM}&stream=0.sdp?real_stream\" -frames:v 1 -vf scale=640:-1 -f image2 /tmp/ks${CAM}.jpg -loglevel quiet 2>/dev/null; python3 -c \"import base64,json,urllib.request,datetime; cam='cam_${CAM}'; b64=base64.b64encode(open('/tmp/ks${CAM}.jpg','rb').read()).decode(); now=datetime.datetime.now(datetime.timezone.utc).isoformat(); body=json.dumps({'camera_id':cam,'zone_id':'front_door','frame_b64':b64,'captured_at':now}).encode(); resp=urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:6704/v1/analyze/frame',body,{'Content-Type':'application/json'}),timeout=30); dets=json.loads(resp.read()).get('detections',[]); print(cam+': '+(', '.join(x['label']+'('+str(round(x['confidence'],2))+')' for x in dets) or 'none'))\" 2>/dev/null || echo \"cam_${CAM}: error\"; done"
 expect_output = ""
 tags          = ["snap"]
 
@@ -188,7 +188,7 @@ tags          = ["snap"]
 # Diagnostic only — read the failure message to see what was found.
 [services.koala-worker.verify.tests.car-watch]
 type          = "shell"
-command       = "python3 -c \"import base64,json,urllib.request,datetime,subprocess,collections; counts=collections.defaultdict(int); [counts.__setitem__('cam_'+CAM+':'+d['label'],counts.get('cam_'+CAM+':'+d['label'],0)+1) for CAM in ['1','6'] for _ in [subprocess.run(['ffmpeg','-y','-rtsp_transport','tcp','-i','rtsp://192.168.86.46:554/user=admin&password=&channel='+CAM+'&stream=0.sdp?real_stream','-frames:v','1','-vf','scale=640:-1','-f','image2','/tmp/kw'+CAM+'.jpg','-loglevel','quiet'],capture_output=True,timeout=10)] if _.returncode==0 for b64 in [base64.b64encode(open('/tmp/kw'+CAM+'.jpg','rb').read()).decode()] for resp in [urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8090/v1/analyze/frame',json.dumps({'camera_id':'cam_'+CAM,'zone_id':'front_door','frame_b64':b64,'captured_at':datetime.datetime.now(datetime.timezone.utc).isoformat()}).encode(),{'Content-Type':'application/json'}),timeout=30)] for d in json.loads(resp.read()).get('detections',[])]; print('detections: '+str(dict(counts)) if counts else 'detections: none')\" 2>/dev/null || echo 'car-watch: error'"
+command       = "python3 -c \"import base64,json,urllib.request,datetime,subprocess,collections; counts=collections.defaultdict(int); [counts.__setitem__('cam_'+CAM+':'+d['label'],counts.get('cam_'+CAM+':'+d['label'],0)+1) for CAM in ['1','6'] for _ in [subprocess.run(['ffmpeg','-y','-rtsp_transport','tcp','-i','rtsp://192.168.86.46:554/user=admin&password=&channel='+CAM+'&stream=0.sdp?real_stream','-frames:v','1','-vf','scale=640:-1','-f','image2','/tmp/kw'+CAM+'.jpg','-loglevel','quiet'],capture_output=True,timeout=10)] if _.returncode==0 for b64 in [base64.b64encode(open('/tmp/kw'+CAM+'.jpg','rb').read()).decode()] for resp in [urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:6704/v1/analyze/frame',json.dumps({'camera_id':'cam_'+CAM,'zone_id':'front_door','frame_b64':b64,'captured_at':datetime.datetime.now(datetime.timezone.utc).isoformat()}).encode(),{'Content-Type':'application/json'}),timeout=30)] for d in json.loads(resp.read()).get('detections',[])]; print('detections: '+str(dict(counts)) if counts else 'detections: none')\" 2>/dev/null || echo 'car-watch: error'"
 expect_output = ""
 tags          = ["car-watch"]
 
@@ -203,12 +203,12 @@ tags          = ["raw-yolo"]
 # ═══════════════════════════════════════════════════════════════════════════════
 # koala-orchestrator — Go binary, manages camera feeds and inference dispatch
 # Target: Jetson Orin Nano (ARM64, native binary, no Docker)
-# Port: 8082 (MCP + HTTP)
+# Port: 6705 (MCP + HTTP)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 [services.koala-orchestrator]
 description  = "Koala orchestrator — camera management and inference dispatch"
-port         = "8082"
+port         = "6705"
 service_name = "koala-orchestrator"
 
 [services.koala-orchestrator.logs]
@@ -248,14 +248,14 @@ CONFIG={{runtime_dir}}/orchestrator/data/koala.yaml
 MCP_TOKEN=$(grep '^KOALA_MCP_TOKEN=' {{runtime_dir}}/orchestrator/koala-orchestrator.env 2>/dev/null | cut -d= -f2- | tr -d '"' || echo 'replace-me')
 cat > "$CONFIG" << KOALA_CONFIG
 config_version: "1"
-listen_addr: ":8082"
+listen_addr: ":6705"
 mcp_token: "$MCP_TOKEN"
 service:
   device_id: "koala-jetson-01"
   version: "0.1.0-dev"
-  address: "http://192.168.86.247:8082"
+  address: "http://192.168.86.247:6705"
 worker:
-  url: "http://127.0.0.1:8090"
+  url: "http://127.0.0.1:6704"
   grpc_addr: "127.0.0.1:6706"
   protocol: "http"
 runtime:

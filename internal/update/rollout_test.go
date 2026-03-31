@@ -41,7 +41,7 @@ func rolloutManifest() Manifest {
 func TestStartRolloutBatchCompleted(t *testing.T) {
 	m := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://127.0.0.1:8080", "0.1.0", NoopExecutor{})
 	m.RegisterDevice("dev2", "http://127.0.0.1:8081", "0.1.0")
-	m.RegisterDevice("dev3", "http://127.0.0.1:8082", "0.1.0")
+	m.RegisterDevice("dev3", "http://127.0.0.1:6705", "0.1.0")
 
 	r, err := m.StartRollout(RolloutRequest{
 		Manifest:    rolloutManifest(),
@@ -63,7 +63,7 @@ func TestStartRolloutBatchCompleted(t *testing.T) {
 func TestStartRolloutStopsOnFailureThreshold(t *testing.T) {
 	m := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://127.0.0.1:8080", "0.1.0", selectiveFailExecutor{failApplyDevice: "dev2"})
 	m.RegisterDevice("dev2", "http://127.0.0.1:8081", "0.1.0")
-	m.RegisterDevice("dev3", "http://127.0.0.1:8082", "0.1.0")
+	m.RegisterDevice("dev3", "http://127.0.0.1:6705", "0.1.0")
 
 	r, err := m.StartRollout(RolloutRequest{
 		Manifest:      rolloutManifest(),

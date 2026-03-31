@@ -11,7 +11,7 @@ var frontDoorCamera = CameraConfig{ID: "cam1", ZoneID: "front_door", FrontDoor: 
 func TestValidateUpdateKeyRequiredWhenEnabled(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Update:   UpdateConfig{Enabled: true, PublicKeyBase64: "", EncryptionKeyBase64: ""},
 		Cameras:  []CameraConfig{frontDoorCamera},
 	}
@@ -24,7 +24,7 @@ func TestValidateUpdateKeyRequiredWhenEnabled(t *testing.T) {
 func TestValidateUpdateEncryptionKeyRequiredWhenEnabled(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Update:   UpdateConfig{Enabled: true, PublicKeyBase64: "abc", EncryptionKeyBase64: ""},
 		Cameras:  []CameraConfig{frontDoorCamera},
 	}
@@ -37,7 +37,7 @@ func TestValidateUpdateEncryptionKeyRequiredWhenEnabled(t *testing.T) {
 func TestValidateUpdateKeyNotRequiredWhenDisabled(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Update:   UpdateConfig{Enabled: false},
 		Cameras:  []CameraConfig{frontDoorCamera},
 	}
@@ -50,7 +50,7 @@ func TestValidateUpdateKeyNotRequiredWhenDisabled(t *testing.T) {
 func TestValidateUpdateRotationConfig(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Update: UpdateConfig{
 			Enabled:             true,
 			ActiveKeyID:         "key-2026-03",
@@ -69,7 +69,7 @@ func TestValidateUpdateRotationConfig(t *testing.T) {
 func TestValidateUpdateRotationPreviousMissingKey(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Update: UpdateConfig{
 			Enabled:             true,
 			ActiveKeyID:         "key-2026-03",
@@ -88,7 +88,7 @@ func TestValidateUpdateRotationPreviousMissingKey(t *testing.T) {
 func TestValidateRotationOnlyRejectsLegacyKey(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Update: UpdateConfig{
 			Enabled:             true,
 			RotationOnlyMode:    true,
@@ -108,7 +108,7 @@ func TestValidateRotationOnlyRejectsLegacyKey(t *testing.T) {
 func TestValidateLegacyModeAllowsPublicKeyBase64(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Update: UpdateConfig{
 			Enabled:             true,
 			RotationOnlyMode:    false,
@@ -126,7 +126,7 @@ func TestValidateLegacyModeAllowsPublicKeyBase64(t *testing.T) {
 func TestValidatePollRequiresManifestURL(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Update: UpdateConfig{
 			Enabled:             true,
 			RotationOnlyMode:    false,
@@ -148,7 +148,7 @@ func TestValidatePollRequiresManifestURL(t *testing.T) {
 func TestValidateConfigVersionDefault(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Cameras:  []CameraConfig{frontDoorCamera},
 	}
 	cfg.applyDefaults()
@@ -161,7 +161,7 @@ func TestValidateConfigVersionUnsupported(t *testing.T) {
 	cfg := Config{
 		ConfigVersion: "99",
 		MCPToken:      "token",
-		Worker:        WorkerConfig{URL: "http://worker:8090"},
+		Worker:        WorkerConfig{URL: "http://worker:6704"},
 		Cameras:       []CameraConfig{frontDoorCamera},
 	}
 	if err := cfg.Validate(); err == nil {
@@ -174,7 +174,7 @@ func TestValidateConfigVersionUnsupported(t *testing.T) {
 func TestValidateDuplicateCameraID(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Cameras: []CameraConfig{
 			{ID: "cam1", ZoneID: "z1", FrontDoor: true},
 			{ID: "cam1", ZoneID: "z1"},
@@ -189,7 +189,7 @@ func TestValidateDuplicateCameraID(t *testing.T) {
 func TestValidateNoFrontDoorCamera(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Cameras:  []CameraConfig{{ID: "cam1", ZoneID: "z1", FrontDoor: false}},
 	}
 	cfg.applyDefaults()
@@ -205,7 +205,7 @@ func TestValidateNoFrontDoorCamera(t *testing.T) {
 func TestValidateCameraUnknownZoneRef(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Zones:    []ZoneConfig{{ID: "front_door", Name: "Front Door"}},
 		Cameras:  []CameraConfig{{ID: "cam1", ZoneID: "does_not_exist", FrontDoor: true}},
 	}
@@ -222,7 +222,7 @@ func TestValidateCameraUnknownZoneRef(t *testing.T) {
 func TestValidateCameraConfidenceThresholdOutOfRange(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Cameras:  []CameraConfig{{ID: "cam1", ZoneID: "z1", FrontDoor: true, ConfidenceThreshold: 1.5}},
 	}
 	cfg.applyDefaults()
@@ -234,7 +234,7 @@ func TestValidateCameraConfidenceThresholdOutOfRange(t *testing.T) {
 func TestValidateCameraMaxFPSNegative(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Cameras:  []CameraConfig{{ID: "cam1", ZoneID: "z1", FrontDoor: true, MaxFPS: -1}},
 	}
 	cfg.applyDefaults()
@@ -248,7 +248,7 @@ func TestValidateCameraMaxFPSNegative(t *testing.T) {
 func TestValidateDuplicateZoneID(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Zones: []ZoneConfig{
 			{ID: "front_door", Name: "Front Door"},
 			{ID: "front_door", Name: "Duplicate"},
@@ -264,7 +264,7 @@ func TestValidateDuplicateZoneID(t *testing.T) {
 func TestValidateZoneConfidenceThresholdOutOfRange(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Zones:    []ZoneConfig{{ID: "front_door", Name: "Front Door", ConfidenceThreshold: -0.1}},
 		Cameras:  []CameraConfig{{ID: "cam1", ZoneID: "front_door", FrontDoor: true}},
 	}
@@ -295,7 +295,7 @@ func TestWorkerProtocol_GRPCExplicit_RequiresGRPCAddr(t *testing.T) {
 func TestWorkerProtocol_GRPCExplicit_CustomAddr(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{Protocol: "grpc", GRPCAddr: "worker.local:50051"},
+		Worker:   WorkerConfig{Protocol: "grpc", GRPCAddr: "worker.local:6706"},
 		Cameras:  []CameraConfig{frontDoorCamera},
 	}
 	cfg.applyDefaults()
@@ -320,7 +320,7 @@ func TestWorkerProtocol_AutoDetect_URLOnly_BecomesHTTP(t *testing.T) {
 	// Existing config style: only worker.url set — must auto-detect as "http".
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Cameras:  []CameraConfig{frontDoorCamera},
 	}
 	cfg.applyDefaults()
@@ -335,7 +335,7 @@ func TestWorkerProtocol_AutoDetect_URLOnly_BecomesHTTP(t *testing.T) {
 func TestWorkerProtocol_AutoDetect_GRPCAddrOnly_BecomesGRPC(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{GRPCAddr: "worker:50051"},
+		Worker:   WorkerConfig{GRPCAddr: "worker:6706"},
 		Cameras:  []CameraConfig{frontDoorCamera},
 	}
 	cfg.applyDefaults()
@@ -362,7 +362,7 @@ func TestWorkerProtocol_Unknown_FailsValidation(t *testing.T) {
 func TestValidateValidWithZonesAndCameras(t *testing.T) {
 	cfg := Config{
 		MCPToken: "token",
-		Worker:   WorkerConfig{URL: "http://worker:8090"},
+		Worker:   WorkerConfig{URL: "http://worker:6704"},
 		Zones: []ZoneConfig{
 			{ID: "front_door", Name: "Front Door"},
 			{ID: "garage", Name: "Garage"},

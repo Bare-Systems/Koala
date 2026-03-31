@@ -50,7 +50,7 @@ type WorkerConfig struct {
 	// Protocol selects the inference transport: "grpc" (default) or "http".
 	// If omitted, auto-detected from which address field is populated.
 	Protocol string `yaml:"protocol"`
-	// GRPCAddr is the gRPC target address (e.g. "localhost:50051").
+	// GRPCAddr is the gRPC target address (e.g. "localhost:6706").
 	// Required when Protocol is "grpc".
 	GRPCAddr string `yaml:"grpc_addr"`
 }
@@ -149,7 +149,7 @@ func (c *Config) applyDefaults() {
 	}
 	// Default gRPC address when protocol is grpc and none was specified.
 	if c.Worker.Protocol == "grpc" && c.Worker.GRPCAddr == "" {
-		c.Worker.GRPCAddr = "localhost:50051"
+		c.Worker.GRPCAddr = "localhost:6706"
 	}
 	if c.Runtime.QueueSize <= 0 {
 		c.Runtime.QueueSize = 64

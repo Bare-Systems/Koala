@@ -25,7 +25,7 @@ from .proto import koala_inference_pb2_grpc as pb_grpc
 
 CONTRACT_VERSION = "1"
 WORKER_VERSION = "0.1.0"
-GRPC_PORT = int(os.environ.get("KOALA_GRPC_PORT", "50051"))
+GRPC_PORT = int(os.environ.get("KOALA_GRPC_PORT", "6706"))
 
 
 def _detection_to_pb(d: Detection, timestamp_ms: int) -> pb.Detection:
