@@ -72,7 +72,7 @@ func NewManager(orchestratorVersion string, workerVersion string, localDeviceID 
 		currentVersion = "0.1.0-dev"
 	}
 	if localAddress == "" {
-		localAddress = "http://127.0.0.1:8080"
+		localAddress = "http://127.0.0.1:6705"
 	}
 	if executor == nil {
 		executor = NoopExecutor{}

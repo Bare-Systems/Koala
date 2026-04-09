@@ -46,7 +46,7 @@ func TestDeviceStore_UpsertAndGet(t *testing.T) {
 
 			d := Device{
 				ID:             "dev-1",
-				Address:        "http://10.0.0.1:8080",
+				Address:        "http://10.0.0.1:6705",
 				CurrentVersion: "1.0.0",
 				State:          StateHealthy,
 				UpdatedAt:      time.Now().UTC().Truncate(time.Second),
@@ -289,7 +289,7 @@ func TestSQLiteDeviceStore_SurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store 1: %v", err)
 	}
-	d := Device{ID: "dev-jetson", Address: "http://192.168.1.10:8080", CurrentVersion: "1.0.0", State: StateHealthy, UpdatedAt: time.Now().UTC()}
+	d := Device{ID: "dev-jetson", Address: "http://192.168.1.10:6705", CurrentVersion: "1.0.0", State: StateHealthy, UpdatedAt: time.Now().UTC()}
 	_ = s1.UpsertDevice(d)
 	_ = s1.SetStagedManifest("dev-jetson", validTestManifest(t))
 	_ = s1.Close()

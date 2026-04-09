@@ -1,4 +1,4 @@
-.PHONY: all fmt lint test test-go test-py test-contracts test-agent test-replay build compose-up compose-down compose-logs clean proto eval bench help
+.PHONY: all fmt lint test test-go test-py test-contracts test-agent test-replay build compose-up compose-down compose-logs clean eval bench help
 
 WORKER_DIR := worker
 GO_PACKAGES := ./...
@@ -66,25 +66,6 @@ compose-down:
 compose-logs:
 	docker compose logs -f
 
-# ─── Proto generation ────────────────────────────────────────────────────────
-# Requires: protoc, protoc-gen-go, protoc-gen-go-grpc
-# Install: brew install protobuf && go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-#          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-
-proto:
-	protoc \
-	  --proto_path=proto \
-	  --go_out=proto/inferencev1 \
-	  --go_opt=paths=source_relative \
-	  --go-grpc_out=proto/inferencev1 \
-	  --go-grpc_opt=paths=source_relative \
-	  proto/koala_inference.proto
-	cd $(WORKER_DIR) && python -m grpc_tools.protoc \
-	  -I../proto \
-	  --python_out=koala_worker/proto \
-	  --grpc_python_out=koala_worker/proto \
-	  ../proto/koala_inference.proto
-
 # ─── Python evaluation runner ────────────────────────────────────────────────
 
 eval:
@@ -116,7 +97,6 @@ help:
 	@echo "  make compose-up   Start services with Docker Compose"
 	@echo "  make compose-down Stop Docker Compose services"
 	@echo "  make compose-logs Tail Docker Compose logs"
-	@echo "  make proto        Regenerate gRPC stubs"
 	@echo "  make clean        Remove build artifacts"
 
 # ─── Cleanup ─────────────────────────────────────────────────────────────────

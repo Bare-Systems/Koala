@@ -42,7 +42,7 @@ type ToolResponse struct {
 	// Status is always present: "ok", "degraded", "stale", or "error".
 	Status string `json:"status"`
 	// FreshnessSeconds is seconds since the underlying observation was recorded.
-	FreshnessSeconds int64 `json:"freshness_seconds,omitempty"`
+	FreshnessSeconds int64 `json:"freshness_seconds"`
 	// Explanation is a human-readable sentence describing the status.
 	Explanation string `json:"explanation"`
 	// ErrorCode is set on error responses. One of the ErrCode* constants.

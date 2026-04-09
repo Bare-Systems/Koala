@@ -4,9 +4,19 @@ Koala is a local-first AI home-state service for Bare Systems.
 
 ## MVP Architecture
 
-- Go orchestrator: camera discovery, ingest scheduling, zone state, MCP tools, auth.
-- Python worker: package/person inference abstraction (YOLO baseline with deterministic fallback).
-- Proto contract: `proto/koala_inference.proto` for versioned worker API definitions.
+- Go orchestrator: camera discovery, RTSP ingest, zone state, REST APIs, and MCP on `6705`.
+- Python worker: private HTTP inference service on `6704` (YOLO baseline with deterministic fallback).
+
+## Runtime Flow
+
+Koala does not passively intercept camera traffic. The orchestrator actively
+connects to configured RTSP streams, samples frames with `ffmpeg`, forwards
+those frames to the private worker, filters detections into zone state, and
+then exposes AI-friendly APIs on `6705`.
+
+```text
+RTSP ingest -> frame sampling -> worker inference -> detection filtering -> temporal aggregation -> agent/API response
+```
 
 ## Run
 
@@ -90,7 +100,7 @@ The stable `blink` deployment shape is:
 - DVR: `192.168.86.46`
 - BearClaw and Koala Live call Koala at `http://192.168.86.53:6705`
 - The camera-facing orchestrator runs on host networking
-- The worker stays on bridge networking and is published on `8092`
+- The worker stays private on `127.0.0.1:6704`
 
 That host-network orchestrator requirement is not optional on `blink`. During
 the March 20, 2026 outage, the host could reach the DVR while Docker bridge
@@ -98,14 +108,25 @@ containers could not. If the host can reach cameras and containers cannot, do
 not change camera code first. Preserve that network pattern as part of the
 supported deployment contract described in `BLINK.md`.
 
-## MCP tools
+## AI Agent Interface
 
-All tools require `Authorization: Bearer <mcp_token>`.
+All agent-facing interfaces on `6705` require `Authorization: Bearer <mcp_token>`.
 
-- `POST /mcp/tools/koala.get_system_health`
-- `POST /mcp/tools/koala.list_cameras`
+- Legacy JSON tool routes:
+  - `POST /mcp/tools/koala.get_system_health`
+  - `POST /mcp/tools/koala.list_cameras`
+  - `POST /mcp/tools/koala.get_zone_state`
+  - `POST /mcp/tools/koala.check_package_at_door`
+- MCP JSON-RPC endpoint:
+  - `POST /mcp`
+
+The `/mcp` endpoint is a stateless MCP HTTP entrypoint for BearClaw-class
+agents. It supports `initialize`, `ping`, `tools/list`, and `tools/call` while
+the legacy `/mcp/tools/...` routes remain available for direct HTTP clients.
+
+Example direct tool route:
+
 - `POST /mcp/tools/koala.get_zone_state` with `{ "input": { "zone_id": "front_door" } }`
-- `POST /mcp/tools/koala.check_package_at_door` with `{ "input": { "camera_id": "cam_front_1" } }`
 
 ## Admin update APIs (MVP foundation)
 

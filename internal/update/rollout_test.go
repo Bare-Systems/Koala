@@ -32,14 +32,14 @@ func rolloutManifest() Manifest {
 		ArtifactURL:            "http://updates.local/koala-0.2.0.bundle.json",
 		SHA256:                 strings.Repeat("a", 64),
 		Signature:              "sig",
-		CreatedAt:              "2026-03-06T00:00:00Z",
+		CreatedAt:              freshCreatedAt(),
 		MinOrchestratorVersion: "0.1.0-dev",
 		MinWorkerVersion:       "0.1.0-dev",
 	}
 }
 
 func TestStartRolloutBatchCompleted(t *testing.T) {
-	m := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://127.0.0.1:8080", "0.1.0", NoopExecutor{})
+	m := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://127.0.0.1:6705", "0.1.0", NoopExecutor{})
 	m.RegisterDevice("dev2", "http://127.0.0.1:8081", "0.1.0")
 	m.RegisterDevice("dev3", "http://127.0.0.1:6705", "0.1.0")
 
@@ -61,7 +61,7 @@ func TestStartRolloutBatchCompleted(t *testing.T) {
 }
 
 func TestStartRolloutStopsOnFailureThreshold(t *testing.T) {
-	m := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://127.0.0.1:8080", "0.1.0", selectiveFailExecutor{failApplyDevice: "dev2"})
+	m := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://127.0.0.1:6705", "0.1.0", selectiveFailExecutor{failApplyDevice: "dev2"})
 	m.RegisterDevice("dev2", "http://127.0.0.1:8081", "0.1.0")
 	m.RegisterDevice("dev3", "http://127.0.0.1:6705", "0.1.0")
 
@@ -84,7 +84,7 @@ func TestStartRolloutStopsOnFailureThreshold(t *testing.T) {
 }
 
 func TestGetAndListRollouts(t *testing.T) {
-	m := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://127.0.0.1:8080", "0.1.0", NoopExecutor{})
+	m := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://127.0.0.1:6705", "0.1.0", NoopExecutor{})
 	r, err := m.StartRollout(RolloutRequest{Manifest: rolloutManifest(), Mode: RolloutModeAll})
 	if err != nil {
 		t.Fatalf("start rollout: %v", err)

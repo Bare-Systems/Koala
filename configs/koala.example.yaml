@@ -1,9 +1,9 @@
-listen_addr: ":8080"
+listen_addr: ":6705"
 mcp_token: "change-me"
 service:
   device_id: "koala-jetson-frontdoor-01"
   version: "0.1.0-dev"
-  address: "http://192.168.1.50:8080"
+  address: "http://192.168.1.50:6705"
 worker:
   url: "http://koala-worker:6704"
 update:

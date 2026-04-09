@@ -31,7 +31,7 @@ func TestHTTPExecutor_CallsAgentEndpoints(t *testing.T) {
 		})},
 	}
 
-	device := Device{ID: "dev1", Address: "http://device.local:8080"}
+	device := Device{ID: "dev1", Address: "http://device.local:6705"}
 	manifest := Manifest{Version: "0.2.0", ArtifactURL: "http://x", SHA256: strings.Repeat("a", 64), Signature: "sig"}
 
 	if err := executor.Stage(context.Background(), device, manifest); err != nil {

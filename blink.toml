@@ -11,7 +11,6 @@ base        = "/home/joe/baresystems"
 runtime_dir = "/home/joe/baresystems/runtime/koala"
 publish_host = "jetson"           # update with Jetson's LAN IP
 api_port    = "6705"
-grpc_port   = "6706"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # koala-worker — Python inference worker (YOLO)
@@ -19,7 +18,7 @@ grpc_port   = "6706"
 # Port: 6704 (HTTP)
 #
 # Build: wheel built locally, scp'd to Jetson, pip-installed there.
-# One-time Jetson setup: pip3 install grpcio ultralytics
+# One-time Jetson setup: pip3 install ultralytics
 # ═══════════════════════════════════════════════════════════════════════════════
 
 [services.koala-worker]
@@ -89,7 +88,7 @@ command = "pkill -f 'koala_worker' 2>/dev/null || true; sleep 2; fuser -k 6704/t
 # ── Start: install wheel then launch ─────────────────────────────────────────
 
 [services.koala-worker.start]
-command = "python3 -c \"import zipfile,shutil; shutil.rmtree('{{runtime_dir}}/worker/site', ignore_errors=True); zipfile.ZipFile('{{runtime_dir}}/worker/koala_worker-latest.whl').extractall('{{runtime_dir}}/worker/site')\" && (KOALA_TRANSPORT=http KOALA_MODEL_DIR={{runtime_dir}}/worker/models PYTHONPATH={{runtime_dir}}/worker/site nohup python3 -m koala_worker.server < /dev/null >> {{runtime_dir}}/worker/logs/worker.log 2>&1 &)"
+command = "python3 -c \"import zipfile,shutil; shutil.rmtree('{{runtime_dir}}/worker/site', ignore_errors=True); zipfile.ZipFile('{{runtime_dir}}/worker/koala_worker-latest.whl').extractall('{{runtime_dir}}/worker/site')\" && (KOALA_MODEL_DIR={{runtime_dir}}/worker/models PYTHONPATH={{runtime_dir}}/worker/site nohup python3 -m koala_worker.server < /dev/null >> {{runtime_dir}}/worker/logs/worker.log 2>&1 &)"
 
 # ── Health check ──────────────────────────────────────────────────────────────
 
@@ -256,8 +255,6 @@ service:
   address: "http://192.168.86.247:6705"
 worker:
   url: "http://127.0.0.1:6704"
-  grpc_addr: "127.0.0.1:6706"
-  protocol: "http"
 runtime:
   queue_size: 64
   freshness_window_seconds: 90
@@ -376,4 +373,3 @@ type          = "http"
 url           = "http://127.0.0.1:{{port}}/mcp/tools/koala.get_system_health"
 expect_status = 401
 tags          = ["smoke"]
-

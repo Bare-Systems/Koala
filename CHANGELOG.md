@@ -7,6 +7,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Koala is now HTTP-only: worker inference stays private on `6704` and the orchestrator exposes the supported REST + MCP surfaces on `6705`
+- Added a stateless MCP JSON-RPC endpoint at `/mcp` for BearClaw-class agent integrations while preserving existing `/mcp/tools/...` routes
+
+### Removed
+
+- Removed the legacy worker transport path and normalized the runtime contract to `6704` and `6705`
+
 ---
 
 ## [0.1.0-dev] — 2026-03-14
@@ -36,9 +45,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Degraded-mode flag set on consecutive inference errors
 
 #### Inference Transport
-- HTTP client (`internal/inference`) for Python worker REST API
-- gRPC client with TLS and retry (`internal/inference/grpc`) — select via `worker.protocol: grpc`
-- Python worker (`worker/`) serving YOLOv8 detections over HTTP and gRPC; deterministic fallback detector for CI
+- HTTP client (`internal/inference`) for the private Python worker API
+- Python worker (`worker/`) serving YOLOv8 detections over HTTP with a deterministic fallback detector for CI
 
 #### Zone & Detection Filtering
 - Sutherland-Hodgman polygon clipping for BBox/zone overlap (`internal/zone`)

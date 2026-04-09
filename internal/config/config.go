@@ -44,15 +44,8 @@ type ServiceConfig struct {
 }
 
 type WorkerConfig struct {
-	// URL is the HTTP endpoint for the legacy HTTP inference transport.
-	// Required when Protocol is "http".
+	// URL is the HTTP endpoint for the private worker inference transport.
 	URL string `yaml:"url"`
-	// Protocol selects the inference transport: "grpc" (default) or "http".
-	// If omitted, auto-detected from which address field is populated.
-	Protocol string `yaml:"protocol"`
-	// GRPCAddr is the gRPC target address (e.g. "localhost:6706").
-	// Required when Protocol is "grpc".
-	GRPCAddr string `yaml:"grpc_addr"`
 }
 
 type UpdateConfig struct {
@@ -136,20 +129,7 @@ func (c *Config) applyDefaults() {
 		c.ConfigVersion = "1"
 	}
 	if c.ListenAddr == "" {
-		c.ListenAddr = ":8080"
-	}
-	// Auto-detect worker protocol when not explicitly set.
-	// Existing configs that only set worker.url keep working as "http".
-	if c.Worker.Protocol == "" {
-		if c.Worker.GRPCAddr != "" {
-			c.Worker.Protocol = "grpc"
-		} else {
-			c.Worker.Protocol = "http"
-		}
-	}
-	// Default gRPC address when protocol is grpc and none was specified.
-	if c.Worker.Protocol == "grpc" && c.Worker.GRPCAddr == "" {
-		c.Worker.GRPCAddr = "localhost:6706"
+		c.ListenAddr = ":6705"
 	}
 	if c.Runtime.QueueSize <= 0 {
 		c.Runtime.QueueSize = 64
@@ -170,7 +150,7 @@ func (c *Config) applyDefaults() {
 		c.Service.Version = "0.1.0-dev"
 	}
 	if c.Service.Address == "" {
-		c.Service.Address = "http://127.0.0.1:8080"
+		c.Service.Address = "http://127.0.0.1:6705"
 	}
 	if c.Update.StagingDir == "" {
 		c.Update.StagingDir = "/tmp/koala/staging"
@@ -202,17 +182,8 @@ func (c Config) Validate() error {
 	if c.Runtime.ConfidenceThreshold < 0 || c.Runtime.ConfidenceThreshold > 1 {
 		return fmt.Errorf("runtime.confidence_threshold must be between 0 and 1")
 	}
-	switch c.Worker.Protocol {
-	case "grpc":
-		if c.Worker.GRPCAddr == "" {
-			return fmt.Errorf("worker.grpc_addr is required when worker.protocol=grpc")
-		}
-	case "http":
-		if c.Worker.URL == "" {
-			return fmt.Errorf("worker.url is required when worker.protocol=http")
-		}
-	default:
-		return fmt.Errorf("worker.protocol must be \"grpc\" or \"http\", got %q", c.Worker.Protocol)
+	if c.Worker.URL == "" {
+		return fmt.Errorf("worker.url is required")
 	}
 	if len(c.Cameras) == 0 {
 		return fmt.Errorf("at least one camera is required")

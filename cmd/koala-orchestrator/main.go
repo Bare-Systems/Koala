@@ -74,20 +74,8 @@ func main() {
 	}
 	aggregator := state.NewAggregator(freshnessWindow, cfg.Runtime.MinDetections)
 
-	var inferenceClient inference.Client
-	switch cfg.Worker.Protocol {
-	case "grpc":
-		grpcClient, grpcErr := inference.NewGRPCClient(cfg.Worker.GRPCAddr, 5, 15*time.Second)
-		if grpcErr != nil {
-			log.Fatalf("init grpc inference client addr=%s: %v", cfg.Worker.GRPCAddr, grpcErr)
-		}
-		defer grpcClient.Close()
-		inferenceClient = grpcClient
-		log.Printf("startup: inference transport=grpc addr=%s", cfg.Worker.GRPCAddr)
-	default: // "http"
-		inferenceClient = inference.NewHTTPClient(cfg.Worker.URL)
-		log.Printf("startup: inference transport=http url=%s", cfg.Worker.URL)
-	}
+	inferenceClient := inference.NewHTTPClient(cfg.Worker.URL)
+	log.Printf("startup: inference transport=http url=%s", cfg.Worker.URL)
 	svc := service.New(registry, aggregator, inferenceClient, cfg.Runtime.QueueSize)
 	zoneFilter := service.NewZoneFilter(toZoneFilters(cfg))
 	// Wire per-camera confidence thresholds (priority over zone/global).
@@ -291,11 +279,6 @@ func logStartupReport(cfg config.Config, reg *camera.Registry) {
 		}
 	}
 
-	transport := cfg.Worker.Protocol
-	if transport == "" {
-		transport = "http"
-	}
-
 	privacyMode := "frame-buffer-enabled"
 	if !cfg.Privacy.FrameBufferEnabled {
 		privacyMode = "metadata-only"
@@ -322,7 +305,7 @@ func logStartupReport(cfg config.Config, reg *camera.Registry) {
 	log.Printf("startup: ── Koala Orchestrator ──────────────────────────────────────")
 	log.Printf("startup: version=%s device_id=%s", cfg.Service.Version, cfg.Service.DeviceID)
 	log.Printf("startup: listen=%s service_addr=%s", cfg.ListenAddr, cfg.Service.Address)
-	log.Printf("startup: inference transport=%s", transport)
+	log.Printf("startup: inference=http worker_url=%s", cfg.Worker.URL)
 	log.Printf("startup: privacy=%s", privacyMode)
 	log.Printf("startup: runtime queue=%d freshness=%ds min_detections=%d confidence=%.2f",
 		cfg.Runtime.QueueSize, cfg.Runtime.FreshnessWindow,
@@ -373,9 +356,7 @@ func buildConfigSnapshot(cfg config.Config) map[string]any {
 			"stream_sample_fps":       cfg.Runtime.StreamSampleFPS,
 		},
 		"worker": map[string]any{
-			"protocol":     cfg.Worker.Protocol,
-			"url_set":      cfg.Worker.URL != "",
-			"grpc_addr_set": cfg.Worker.GRPCAddr != "",
+			"url_set": cfg.Worker.URL != "",
 		},
 		"update": map[string]any{
 			"enabled":         cfg.Update.Enabled,

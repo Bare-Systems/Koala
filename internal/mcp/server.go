@@ -86,6 +86,7 @@ func (s *Server) currentToken() string {
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/mcp", s.wrapAuth(s.mcpTransport))
 	mux.HandleFunc("/mcp/tools/koala.get_system_health", s.wrapAuth(s.getSystemHealth))
 	mux.HandleFunc("/mcp/tools/koala.list_cameras", s.wrapAuth(s.listCameras))
 	mux.HandleFunc("/mcp/tools/koala.get_zone_state", s.wrapAuth(s.getZoneState))
@@ -246,34 +247,11 @@ func (s *Server) writeJSON(w http.ResponseWriter, code int, payload any) {
 }
 
 func (s *Server) getSystemHealth(w http.ResponseWriter, _ *http.Request) {
-	health := s.service.Health()
-	status := "ok"
-	explanation := "all subsystems healthy"
-	if health.Status != "ok" {
-		status = "degraded"
-		explanation = "one or more subsystems degraded"
-	}
-	s.writeJSON(w, http.StatusOK, map[string]any{
-		"status":      status,
-		"explanation": explanation,
-		"data":        health,
-	})
+	s.writeJSON(w, http.StatusOK, s.getSystemHealthResponse())
 }
 
 func (s *Server) listCameras(w http.ResponseWriter, _ *http.Request) {
-	status := "ok"
-	explanation := "camera registry loaded"
-	if s.service.IsDegraded() {
-		status = "degraded"
-		explanation = "inference worker degraded; camera registry still available"
-	}
-	s.writeJSON(w, http.StatusOK, map[string]any{
-		"status":      status,
-		"explanation": explanation,
-		"data": map[string]any{
-			"cameras": s.service.Registry.List(),
-		},
-	})
+	s.writeJSON(w, http.StatusOK, s.listCamerasResponse())
 }
 
 func (s *Server) getZoneState(w http.ResponseWriter, r *http.Request) {
@@ -281,42 +259,8 @@ func (s *Server) getZoneState(w http.ResponseWriter, r *http.Request) {
 	if s.handleDecodeError(w, err) {
 		return
 	}
-
-	zoneID, err := readRequiredString(req.Input, "zone_id")
-	if err != nil {
-		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "provide zone_id in the input object")
-		return
-	}
-	zoneState := s.service.ZoneState(zoneID)
-	status := "ok"
-	explanation := "zone state available"
-	nextAction := ""
-	switch {
-	case s.service.IsDegraded():
-		status = "degraded"
-		explanation = "inference unavailable; returning last-known zone state"
-		nextAction = "call koala.get_system_health for details"
-	case zoneState.Stale:
-		status = "stale"
-		explanation = fmt.Sprintf("no recent observations for zone %q; ensure camera is active and streaming", zoneID)
-		nextAction = "call koala.get_system_health to check camera and inference status"
-	}
-	resp := map[string]any{
-		"status":            status,
-		"freshness_seconds": zoneState.FreshnessSec,
-		"explanation":       explanation,
-		"risk_level":        RiskLow,
-		"data": map[string]any{
-			"zone_id":     zoneState.ZoneID,
-			"observed_at": zoneState.ObservedAt.UTC().Format(time.RFC3339),
-			"stale":       zoneState.Stale,
-			"entities":    zoneState.Entities,
-		},
-	}
-	if nextAction != "" {
-		resp["next_action"] = nextAction
-	}
-	s.writeJSON(w, http.StatusOK, resp)
+	resp, code := s.getZoneStateResponse(req.Input)
+	s.writeJSON(w, code, resp)
 }
 
 func (s *Server) checkPackageAtDoor(w http.ResponseWriter, r *http.Request) {
@@ -324,46 +268,8 @@ func (s *Server) checkPackageAtDoor(w http.ResponseWriter, r *http.Request) {
 	if s.handleDecodeError(w, err) {
 		return
 	}
-	cameraID, _ := readOptionalString(req.Input, "camera_id")
-	present, confidence, observedAt, err := s.service.DoorPackageState(cameraID)
-	if err != nil {
-		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "provide a valid camera_id or omit to use the default front door camera")
-		return
-	}
-	stale := observedAt.IsZero()
-	status := "ok"
-	explanation := "front door package state computed"
-	nextAction := ""
-	switch {
-	case s.service.IsDegraded():
-		status = "degraded"
-		explanation = "inference unavailable; returning last-known package state"
-		nextAction = "call koala.get_system_health for details"
-	case stale:
-		status = "stale"
-		explanation = "no observations yet for the front door camera; state is unknown"
-		nextAction = "ensure the front door camera is online and check koala.get_system_health"
-	}
-	freshness := int64(0)
-	if !observedAt.IsZero() {
-		freshness = int64(time.Since(observedAt).Seconds())
-	}
-	resp := map[string]any{
-		"status":            status,
-		"freshness_seconds": freshness,
-		"explanation":       explanation,
-		"risk_level":        RiskLow,
-		"data": map[string]any{
-			"package_present": present,
-			"confidence":      confidence,
-			"observed_at":     observedAt.UTC().Format(time.RFC3339),
-			"stale":           stale,
-		},
-	}
-	if nextAction != "" {
-		resp["next_action"] = nextAction
-	}
-	s.writeJSON(w, http.StatusOK, resp)
+	resp, code := s.checkPackageAtDoorResponse(req.Input)
+	s.writeJSON(w, code, resp)
 }
 
 func (s *Server) ingestFrame(w http.ResponseWriter, r *http.Request) {

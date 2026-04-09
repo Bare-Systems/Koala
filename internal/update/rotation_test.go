@@ -27,7 +27,7 @@ func TestRotatingVerifierAcceptsPreviousKey(t *testing.T) {
 		Version:     "0.2.0",
 		ArtifactURL: "http://updates.local/koala.bundle.json",
 		SHA256:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		CreatedAt:   "2026-03-06T00:00:00Z",
+		CreatedAt:   freshCreatedAt(),
 	}
 	manifest.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(previousPriv, []byte(ManifestSigningPayload(manifest))))
 	if err := verifier.VerifyManifest(manifest); err != nil {

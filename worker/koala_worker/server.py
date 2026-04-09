@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -60,14 +59,7 @@ def _serve_http() -> None:
 
 
 def main() -> None:
-    transport = os.environ.get("KOALA_TRANSPORT", "grpc").lower()
-    if transport == "http":
-        _serve_http()
-    else:
-        # Default: gRPC transport
-        from .grpc_server import serve as grpc_serve  # noqa: PLC0415
-
-        grpc_serve()
+    _serve_http()
 
 
 if __name__ == "__main__":

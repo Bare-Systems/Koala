@@ -3,10 +3,8 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.worker.blink
-    environment:
-      KOALA_TRANSPORT: "http"
     ports:
-      - "127.0.0.1:8092:6704"
+      - "127.0.0.1:6704:6704"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:6704/v1/health || exit 1"]

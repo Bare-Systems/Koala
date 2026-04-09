@@ -4,8 +4,6 @@ version = "0.1.0"
 description = "Koala Python inference worker"
 requires-python = ">=3.10"
 dependencies = [
-    "grpcio>=1.60.0",
-    "protobuf>=4.25.0",
 ]
 
 [project.optional-dependencies]
@@ -15,7 +13,6 @@ gpu = ["ultralytics>=8.0"]
 
 [project.scripts]
 koala-worker = "koala_worker.server:main"
-koala-worker-grpc = "koala_worker.grpc_server:serve"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

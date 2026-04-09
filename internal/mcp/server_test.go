@@ -142,7 +142,7 @@ func TestServer_AdminConfig_WithSnapshot(t *testing.T) {
 	registry := camera.NewRegistry([]camera.Camera{{ID: "cam_front_1", ZoneID: "front_door", FrontDoor: true}})
 	svc := service.New(registry, state.NewAggregator(time.Minute), fakeInferenceClient{}, 2)
 	snap := map[string]any{
-		"listen_addr": ":8080",
+		"listen_addr": ":6705",
 		"cameras":     []any{},
 	}
 	h := NewServer("test-token", svc, nil, nil, nil, nil, nil).
@@ -160,7 +160,7 @@ func TestServer_AdminConfig_WithSnapshot(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	data := payload["data"].(map[string]any)
-	if data["listen_addr"] != ":8080" {
-		t.Fatalf("expected listen_addr=:8080 in snapshot, got %v", data["listen_addr"])
+	if data["listen_addr"] != ":6705" {
+		t.Fatalf("expected listen_addr=:6705 in snapshot, got %v", data["listen_addr"])
 	}
 }

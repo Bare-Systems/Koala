@@ -1,3 +1,0 @@
-[console_scripts]
-koala-worker = koala_worker.server:main
-koala-worker-grpc = koala_worker.grpc_server:serve

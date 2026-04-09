@@ -4,8 +4,6 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.worker
-    ports:
-      - "6704:6704"
 
   koala-orchestrator:
     build:
@@ -14,6 +12,6 @@ services:
     depends_on:
       - koala-worker
     ports:
-      - "8080:8080"
+      - "6705:6705"
     volumes:
       - ./configs/koala.yaml:/app/configs/koala.yaml:ro

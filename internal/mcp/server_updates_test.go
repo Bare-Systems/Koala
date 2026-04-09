@@ -25,7 +25,7 @@ func updateManifestJSON() string {
   "signature": "sig-ed25519-1",
   "min_orchestrator_version": "0.1.0-dev",
   "min_worker_version": "0.1.0-dev",
-  "created_at": "2026-03-06T00:00:00Z"
+  "created_at": "` + time.Now().UTC().Format(time.RFC3339) + `"
 },
 "device_ids": ["koala-local"]
 }`
@@ -34,7 +34,7 @@ func updateManifestJSON() string {
 func newServerWithUpdater() http.Handler {
 	registry := camera.NewRegistry([]camera.Camera{{ID: "cam1", ZoneID: "front_door", FrontDoor: true}})
 	svc := service.New(registry, state.NewAggregator(time.Minute), fakeInferenceClient{}, 2)
-	updater := update.NewManager("0.1.0-dev", "0.1.0-dev", "koala-local", "http://127.0.0.1:8080", "0.1.0", update.NoopExecutor{})
+	updater := update.NewManager("0.1.0-dev", "0.1.0-dev", "koala-local", "http://127.0.0.1:6705", "0.1.0", update.NoopExecutor{})
 	agent := update.NewMemoryAgent("0.1.0")
 	return NewServer("test-token", svc, updater, agent, nil, nil, nil).Routes()
 }

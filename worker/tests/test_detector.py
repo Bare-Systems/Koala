@@ -66,7 +66,7 @@ class TestLabelMap(unittest.TestCase):
                 self.assertEqual(LABEL_MAP.get(alias), "package")
 
     def test_unknown_label_not_in_map(self) -> None:
-        self.assertIsNone(LABEL_MAP.get("bicycle"))
+        self.assertIsNone(LABEL_MAP.get("traffic_cone"))
 
 
 class TestDetectorConfig(unittest.TestCase):

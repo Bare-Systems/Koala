@@ -21,7 +21,7 @@ func newFleetServer(t *testing.T) http.Handler {
 		{ID: "cam1", ZoneID: "front_door", FrontDoor: true},
 	})
 	svc := service.New(registry, state.NewAggregator(time.Minute), fakeInferenceClient{}, 2)
-	updater := update.NewManager("0.1.0-dev", "0.1.0-dev", "koala-local", "http://127.0.0.1:8080", "0.1.0", update.NoopExecutor{})
+	updater := update.NewManager("0.1.0-dev", "0.1.0-dev", "koala-local", "http://127.0.0.1:6705", "0.1.0", update.NoopExecutor{})
 	return NewServer("test-token", svc, updater, nil, nil, nil, nil).Routes()
 }
 
@@ -77,7 +77,7 @@ func TestFleet_ListDevices_NoUpdater_Returns501(t *testing.T) {
 func TestFleet_RegisterDevice_AddsDevice(t *testing.T) {
 	h := newFleetServer(t)
 
-	body := `{"input":{"device_id":"jetson-01","address":"http://10.0.0.10:8080","current_version":"1.0.0"}}`
+	body := `{"input":{"device_id":"jetson-01","address":"http://10.0.0.10:6705","current_version":"1.0.0"}}`
 	rec := doFleetRequest(h, http.MethodPost, "/admin/fleet/devices/register", body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("register: expected 200, got %d: %s", rec.Code, rec.Body)
@@ -116,7 +116,7 @@ func TestFleet_RegisterDevice_AddsDevice(t *testing.T) {
 func TestFleet_RegisterDevice_MissingDeviceID_Returns400(t *testing.T) {
 	h := newFleetServer(t)
 	rec := doFleetRequest(h, http.MethodPost, "/admin/fleet/devices/register",
-		`{"input":{"address":"http://10.0.0.10:8080"}}`)
+		`{"input":{"address":"http://10.0.0.10:6705"}}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
@@ -140,7 +140,7 @@ func TestFleet_DeregisterDevice_RemovesDevice(t *testing.T) {
 
 	// Register a device first.
 	doFleetRequest(h, http.MethodPost, "/admin/fleet/devices/register",
-		`{"input":{"device_id":"jetson-02","address":"http://10.0.0.11:8080","current_version":"1.0.0"}}`)
+		`{"input":{"device_id":"jetson-02","address":"http://10.0.0.11:6705","current_version":"1.0.0"}}`)
 
 	// Deregister it.
 	rec := doFleetRequest(h, http.MethodPost, "/admin/fleet/devices/deregister",
@@ -228,7 +228,7 @@ func TestFleet_FullRoundTrip(t *testing.T) {
 
 	// 1. Register.
 	reg := doFleetRequest(h, http.MethodPost, "/admin/fleet/devices/register",
-		`{"input":{"device_id":"`+devID+`","address":"http://192.168.1.42:8080","current_version":"0.9.0"}}`)
+		`{"input":{"device_id":"`+devID+`","address":"http://192.168.1.42:6705","current_version":"0.9.0"}}`)
 	if reg.Code != http.StatusOK {
 		t.Fatalf("register: %d %s", reg.Code, reg.Body)
 	}

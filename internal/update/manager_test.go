@@ -14,12 +14,12 @@ func validManifest() Manifest {
 		Signature:              "sig-ed25519-1",
 		MinOrchestratorVersion: "0.1.0-dev",
 		MinWorkerVersion:       "0.1.0-dev",
-		CreatedAt:              "2026-03-06T00:00:00Z",
+		CreatedAt:              freshCreatedAt(),
 	}
 }
 
 func TestManagerStageApplyRollback(t *testing.T) {
-	manager := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://192.168.1.20:8080", "0.1.0", NoopExecutor{})
+	manager := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://192.168.1.20:6705", "0.1.0", NoopExecutor{})
 	manifest := validManifest()
 
 	if _, err := manager.Stage(manifest, []string{"dev1"}); err != nil {
@@ -54,7 +54,7 @@ func TestManagerStageApplyRollback(t *testing.T) {
 }
 
 func TestManagerCheckCompatibility(t *testing.T) {
-	manager := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://127.0.0.1:8080", "0.1.0", NoopExecutor{})
+	manager := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://127.0.0.1:6705", "0.1.0", NoopExecutor{})
 	manifest := validManifest()
 	manifest.MinWorkerVersion = "9.9.9"
 
@@ -71,7 +71,7 @@ func TestManagerCheckCompatibility(t *testing.T) {
 }
 
 func TestManagerValidateManifest(t *testing.T) {
-	manager := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://127.0.0.1:8080", "0.1.0", NoopExecutor{})
+	manager := NewManager("0.1.0-dev", "0.1.0-dev", "dev1", "http://127.0.0.1:6705", "0.1.0", NoopExecutor{})
 	bad := Manifest{Version: "0.2.0", ArtifactURL: "http://x", SHA256: "bad", Signature: "sig"}
 	if _, err := manager.Check(bad, nil); err == nil {
 		t.Fatalf("expected invalid sha256 error")
