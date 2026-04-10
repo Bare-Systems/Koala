@@ -11,6 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Koala is now HTTP-only: worker inference stays private on `6704` and the orchestrator exposes the supported REST + MCP surfaces on `6705`
 - Added a stateless MCP JSON-RPC endpoint at `/mcp` for BearClaw-class agent integrations while preserving existing `/mcp/tools/...` routes
+- Ignored the repository-root `blink.toml` and `BLINK.md` and stopped tracking them so homelab-specific Blink targets and operator notes stay local-only.
 
 ### Removed
 
