@@ -1,0 +1,2 @@
+[console_scripts]
+koala-worker = koala_worker.server:main

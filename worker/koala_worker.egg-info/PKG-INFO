@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: koala-worker
+Version: 0.1.0
+Summary: Koala Python inference worker
+Requires-Python: >=3.10
+Provides-Extra: inference
+Requires-Dist: ultralytics>=8.0; extra == "inference"
+Provides-Extra: gpu
+Requires-Dist: ultralytics>=8.0; extra == "gpu"

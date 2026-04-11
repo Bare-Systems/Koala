@@ -1,0 +1,6 @@
+
+[gpu]
+ultralytics>=8.0
+
+[inference]
+ultralytics>=8.0
