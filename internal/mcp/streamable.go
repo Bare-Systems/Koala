@@ -175,7 +175,274 @@ func (s *Server) mcpTools() []mcpTool {
 	}
 }
 
+func (s *Server) findMCPTool(name string) (mcpTool, bool) {
+	for _, tool := range s.mcpTools() {
+		if tool.Name == name {
+			return tool, true
+		}
+	}
+	return mcpTool{}, false
+}
+
+func schemaPath(path, child string) string {
+	if path == "$" {
+		return "$." + child
+	}
+	return path + "." + child
+}
+
+func matchesSchemaType(expected string, value any) bool {
+	switch expected {
+	case "object":
+		_, ok := value.(map[string]any)
+		return ok
+	case "array":
+		_, ok := value.([]any)
+		return ok
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "integer":
+		number, ok := value.(float64)
+		return ok && number == float64(int64(number))
+	case "number":
+		_, ok := value.(float64)
+		return ok
+	case "null":
+		return value == nil
+	default:
+		return false
+	}
+}
+
+func schemaNumber(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func validateSchemaValue(schema map[string]any, value any, path string) error {
+	if rawType, ok := schema["type"]; ok {
+		switch typed := rawType.(type) {
+		case string:
+			if !matchesSchemaType(typed, value) {
+				return fmt.Errorf("%s has the wrong JSON type", path)
+			}
+		case []any:
+			matched := false
+			for _, candidate := range typed {
+				expected, ok := candidate.(string)
+				if ok && matchesSchemaType(expected, value) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return fmt.Errorf("%s has the wrong JSON type", path)
+			}
+		default:
+			return fmt.Errorf("%s has an invalid tool schema", path)
+		}
+	}
+
+	if rawAnyOf, ok := schema["anyOf"]; ok {
+		candidates, ok := rawAnyOf.([]any)
+		if !ok {
+			return fmt.Errorf("%s has an invalid tool schema", path)
+		}
+		var lastErr error
+		for _, candidate := range candidates {
+			candidateSchema, ok := candidate.(map[string]any)
+			if !ok {
+				return fmt.Errorf("%s has an invalid tool schema", path)
+			}
+			if err := validateSchemaValue(candidateSchema, value, path); err == nil {
+				return nil
+			} else {
+				lastErr = err
+			}
+		}
+		if lastErr != nil {
+			return lastErr
+		}
+		return fmt.Errorf("%s does not match any allowed input shape", path)
+	}
+
+	if rawEnum, ok := schema["enum"]; ok {
+		switch candidates := rawEnum.(type) {
+		case []any:
+			for _, candidate := range candidates {
+				if fmt.Sprintf("%v", candidate) == fmt.Sprintf("%v", value) {
+					goto enumMatched
+				}
+			}
+		case []string:
+			for _, candidate := range candidates {
+				if candidate == fmt.Sprintf("%v", value) {
+					goto enumMatched
+				}
+			}
+		default:
+			return fmt.Errorf("%s has an invalid tool schema", path)
+		}
+		return fmt.Errorf("%s must be one of the allowed enum values", path)
+	enumMatched:
+	}
+
+	switch typed := value.(type) {
+	case map[string]any:
+		properties := map[string]any{}
+		if rawProperties, ok := schema["properties"]; ok {
+			asMap, ok := rawProperties.(map[string]any)
+			if !ok {
+				return fmt.Errorf("%s has an invalid tool schema", path)
+			}
+			properties = asMap
+		}
+
+		if rawRequired, ok := schema["required"]; ok {
+			switch required := rawRequired.(type) {
+			case []any:
+				for _, item := range required {
+					key, ok := item.(string)
+					if !ok {
+						return fmt.Errorf("%s has an invalid tool schema", path)
+					}
+					if _, present := typed[key]; !present {
+						return fmt.Errorf("%s.%s is required", path, key)
+					}
+				}
+			case []string:
+				for _, key := range required {
+					if _, present := typed[key]; !present {
+						return fmt.Errorf("%s.%s is required", path, key)
+					}
+				}
+			default:
+				return fmt.Errorf("%s has an invalid tool schema", path)
+			}
+		}
+
+		additionalProperties := true
+		if rawAdditional, ok := schema["additionalProperties"]; ok {
+			asBool, ok := rawAdditional.(bool)
+			if !ok {
+				return fmt.Errorf("%s has an invalid tool schema", path)
+			}
+			additionalProperties = asBool
+		}
+		if !additionalProperties {
+			for key := range typed {
+				if _, ok := properties[key]; !ok {
+					return fmt.Errorf("%s contains unsupported field %q", path, key)
+				}
+			}
+		}
+
+		for key, childValue := range typed {
+			childSchemaAny, ok := properties[key]
+			if !ok {
+				continue
+			}
+			childSchema, ok := childSchemaAny.(map[string]any)
+			if !ok {
+				return fmt.Errorf("%s has an invalid tool schema", path)
+			}
+			if err := validateSchemaValue(childSchema, childValue, schemaPath(path, key)); err != nil {
+				return err
+			}
+		}
+	case []any:
+		if rawMinItems, ok := schema["minItems"]; ok {
+			minItems, ok := schemaNumber(rawMinItems)
+			if !ok {
+				return fmt.Errorf("%s has an invalid tool schema", path)
+			}
+			if len(typed) < int(minItems) {
+				return fmt.Errorf("%s must contain at least %d item(s)", path, int(minItems))
+			}
+		}
+		if rawItems, ok := schema["items"]; ok {
+			itemSchema, ok := rawItems.(map[string]any)
+			if !ok {
+				return fmt.Errorf("%s has an invalid tool schema", path)
+			}
+			for idx, item := range typed {
+				if err := validateSchemaValue(itemSchema, item, fmt.Sprintf("%s[%d]", path, idx)); err != nil {
+					return err
+				}
+			}
+		}
+	case string:
+		if rawMinLength, ok := schema["minLength"]; ok {
+			minLength, ok := schemaNumber(rawMinLength)
+			if !ok {
+				return fmt.Errorf("%s has an invalid tool schema", path)
+			}
+			if len(typed) < int(minLength) {
+				return fmt.Errorf("%s must not be empty", path)
+			}
+		}
+	case float64:
+		if rawMinimum, ok := schema["minimum"]; ok {
+			minimum, ok := schemaNumber(rawMinimum)
+			if !ok {
+				return fmt.Errorf("%s has an invalid tool schema", path)
+			}
+			if typed < minimum {
+				return fmt.Errorf("%s must be >= %v", path, minimum)
+			}
+		}
+		if rawMaximum, ok := schema["maximum"]; ok {
+			maximum, ok := schemaNumber(rawMaximum)
+			if !ok {
+				return fmt.Errorf("%s has an invalid tool schema", path)
+			}
+			if typed > maximum {
+				return fmt.Errorf("%s must be <= %v", path, maximum)
+			}
+		}
+	}
+
+	return nil
+}
+
+func validateMCPToolInput(tool mcpTool, input map[string]any) error {
+	if tool.InputSchema == nil {
+		return nil
+	}
+	return validateSchemaValue(tool.InputSchema, input, "$")
+}
+
 func (s *Server) callTool(name string, input map[string]any) (ToolResponse, int) {
+	tool, ok := s.findMCPTool(name)
+	if !ok {
+		return ToolResponse{
+			Status:      "error",
+			Explanation: fmt.Sprintf("unknown tool %q", name),
+			ErrorCode:   ErrCodeInvalidInput,
+			NextAction:  "call tools/list to discover supported tool names",
+		}, http.StatusBadRequest
+	}
+	if err := validateMCPToolInput(tool, input); err != nil {
+		return ToolResponse{
+			Status:      "error",
+			Explanation: err.Error(),
+			ErrorCode:   ErrCodeInvalidInput,
+			NextAction:  "call tools/list to inspect the expected inputSchema",
+		}, http.StatusBadRequest
+	}
+
 	switch name {
 	case "koala.get_system_health":
 		return s.getSystemHealthResponse(), http.StatusOK
@@ -191,7 +458,7 @@ func (s *Server) callTool(name string, input map[string]any) (ToolResponse, int)
 			Explanation: fmt.Sprintf("unknown tool %q", name),
 			ErrorCode:   ErrCodeInvalidInput,
 			NextAction:  "call tools/list to discover supported tool names",
-		}, http.StatusNotFound
+		}, http.StatusBadRequest
 	}
 }
 
