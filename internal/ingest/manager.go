@@ -180,12 +180,18 @@ func (m *Manager) runCamera(ctx context.Context, cam camera.Camera) {
 
 			m.registry.SetStatus(cam.ID, camera.StatusAvailable)
 			now := time.Now().UTC()
-			accepted := m.submitter.Submit(service.FrameTask{
-				CameraID: cam.ID,
-				ZoneID:   cam.ZoneID,
-				FrameB64: base64.StdEncoding.EncodeToString(frame),
-				Captured: now,
-			})
+			// Detection gate: only cameras flagged for detection forward frames
+			// to the inference worker. All cameras still buffer frames (above)
+			// for live snapshots regardless of this flag.
+			accepted := false
+			if cam.RunDetection {
+				accepted = m.submitter.Submit(service.FrameTask{
+					CameraID: cam.ID,
+					ZoneID:   cam.ZoneID,
+					FrameB64: base64.StdEncoding.EncodeToString(frame),
+					Captured: now,
+				})
+			}
 			recovered := false
 			m.increment(cam.ID, func(s *CameraStats) {
 				if s.ConsecutiveFailures > 0 {
@@ -196,10 +202,12 @@ func (m *Manager) runCamera(ctx context.Context, cam camera.Camera) {
 				s.LastError = ""
 				s.LastCaptureAt = now.Format(time.RFC3339)
 				s.LastStatus = camera.StatusAvailable
-				if accepted {
-					s.Submitted++
-				} else {
-					s.Dropped++
+				if cam.RunDetection {
+					if accepted {
+						s.Submitted++
+					} else {
+						s.Dropped++
+					}
 				}
 			})
 			m.onRecovery(cam.ID, recovered)

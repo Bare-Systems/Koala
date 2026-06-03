@@ -1,14 +1,19 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
+	"image"
+	"image/jpeg"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Bare-Systems/Koala/internal/camera"
 	"github.com/Bare-Systems/Koala/internal/inference"
+	"github.com/Bare-Systems/Koala/internal/snapshot"
 	"github.com/Bare-Systems/Koala/internal/state"
 	"github.com/Bare-Systems/Koala/internal/zone"
 )
@@ -35,6 +40,45 @@ func (s staticInferenceClient) WorkerHealth(_ context.Context) (inference.Health
 		return inference.HealthResponse{}, s.err
 	}
 	return inference.HealthResponse{Status: "ok"}, nil
+}
+
+func encodeTestJPEG(t *testing.T) string {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 32, 32))
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, nil); err != nil {
+		t.Fatalf("encode test jpeg: %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
+func TestDetectionSnapshotCapturedOnAlert(t *testing.T) {
+	registry := camera.NewRegistry([]camera.Camera{{ID: "cam1", ZoneID: "front_door", FrontDoor: true}})
+	svc := New(registry, state.NewAggregator(time.Minute), staticInferenceClient{}, 4)
+	svc.Snapshots = snapshot.NewStore(0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	svc.Start(ctx)
+
+	svc.Submit(FrameTask{CameraID: "cam1", ZoneID: "front_door", FrameB64: encodeTestJPEG(t), Captured: time.Now().UTC()})
+
+	var found bool
+	for i := 0; i < 50; i++ {
+		if alerts := svc.RecentAlerts(1); len(alerts) == 1 {
+			if frame, ok := svc.Snapshot(alerts[0].ID); ok && len(frame) > 0 {
+				if _, err := jpeg.Decode(bytes.NewReader(frame)); err != nil {
+					t.Fatalf("stored snapshot is not a valid JPEG: %v", err)
+				}
+				found = true
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !found {
+		t.Fatal("expected a snapshot to be captured for the fired alert")
+	}
 }
 
 func TestServiceQueueBackpressure(t *testing.T) {

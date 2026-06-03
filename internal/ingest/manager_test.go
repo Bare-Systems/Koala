@@ -67,7 +67,7 @@ type rejectingSubmitter struct{}
 func (r *rejectingSubmitter) Submit(_ service.FrameTask) bool { return false }
 
 func TestManagerSubmitsFramesAndMarksCameraAvailable(t *testing.T) {
-	registry := camera.NewRegistry([]camera.Camera{{ID: "cam1", RTSPURL: "rtsp://example", ZoneID: "front_door", Status: camera.StatusUnknown}})
+	registry := camera.NewRegistry([]camera.Camera{{ID: "cam1", RTSPURL: "rtsp://example", ZoneID: "front_door", RunDetection: true, Status: camera.StatusUnknown}})
 	snapshotter := &fakeSnapshotter{payload: []byte("jpeg")}
 	submitter := &fakeSubmitter{}
 	m := NewManager(registry, submitter, snapshotter, 10*time.Millisecond, time.Second)
@@ -90,6 +90,40 @@ func TestManagerSubmitsFramesAndMarksCameraAvailable(t *testing.T) {
 	}
 	if cam.Status != camera.StatusAvailable {
 		t.Fatalf("expected camera status available, got %s", cam.Status)
+	}
+}
+
+func TestManagerBuffersButDoesNotSubmitWhenDetectionDisabled(t *testing.T) {
+	registry := camera.NewRegistry([]camera.Camera{{ID: "cam1", RTSPURL: "rtsp://example", ZoneID: "front_door", RunDetection: false, Status: camera.StatusUnknown}})
+	snapshotter := &fakeSnapshotter{payload: []byte("jpeg")}
+	submitter := &fakeSubmitter{}
+	m := NewManager(registry, submitter, snapshotter, 10*time.Millisecond, time.Second)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.Start(ctx)
+	time.Sleep(35 * time.Millisecond)
+	cancel()
+	time.Sleep(10 * time.Millisecond)
+
+	if snapshotter.CallCount() == 0 {
+		t.Fatal("expected snapshotter to be called even with detection disabled")
+	}
+	if submitter.TaskCount() != 0 {
+		t.Fatalf("expected no frame tasks submitted when detection disabled, got %d", submitter.TaskCount())
+	}
+	if _, ok := m.LatestFrame("cam1"); !ok {
+		t.Fatal("expected latest frame to be buffered for live view even with detection disabled")
+	}
+	cam, ok := registry.Get("cam1")
+	if !ok {
+		t.Fatal("expected camera to exist")
+	}
+	if cam.Status != camera.StatusAvailable {
+		t.Fatalf("expected camera status available, got %s", cam.Status)
+	}
+	stats := m.Status().Cameras["cam1"]
+	if stats.Submitted != 0 || stats.Dropped != 0 {
+		t.Fatalf("expected no submit/drop accounting when detection disabled, got submitted=%d dropped=%d", stats.Submitted, stats.Dropped)
 	}
 }
 
@@ -153,7 +187,7 @@ func TestManagerRecordsRecoveryIncident(t *testing.T) {
 }
 
 func TestManagerDropsFramesWhenQueueFull(t *testing.T) {
-	registry := camera.NewRegistry([]camera.Camera{{ID: "cam1", RTSPURL: "rtsp://example", ZoneID: "front_door"}})
+	registry := camera.NewRegistry([]camera.Camera{{ID: "cam1", RTSPURL: "rtsp://example", ZoneID: "front_door", RunDetection: true}})
 	snapshotter := &fakeSnapshotter{payload: []byte("jpeg")}
 	m := NewManager(registry, &rejectingSubmitter{}, snapshotter, 10*time.Millisecond, time.Second)
 
@@ -178,8 +212,8 @@ func TestManagerDropsFramesWhenQueueFull(t *testing.T) {
 
 func TestManagerSkipsCameraWithNoRTSPURL(t *testing.T) {
 	registry := camera.NewRegistry([]camera.Camera{
-		{ID: "cam_no_url", ZoneID: "front_door"},               // no RTSP — should be skipped
-		{ID: "cam_ok", RTSPURL: "rtsp://example", ZoneID: "z"}, // has RTSP — should be processed
+		{ID: "cam_no_url", ZoneID: "front_door"},                                    // no RTSP — should be skipped
+		{ID: "cam_ok", RTSPURL: "rtsp://example", ZoneID: "z", RunDetection: true}, // has RTSP — should be processed
 	})
 	snapshotter := &fakeSnapshotter{payload: []byte("jpeg")}
 	submitter := &fakeSubmitter{}

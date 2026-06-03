@@ -236,6 +236,100 @@ Staging/apply storage:
 - staged manifest: `<update.staging_dir>/<version>/manifest.json`
 - active version marker: `<update.active_dir>/current_version`
 
+## Detection snapshots
+
+When an alert fires (an absent→present rising edge for a tracked entity in a
+zone — see "AI Agent Interface"), Koala captures the exact camera frame that
+triggered the detection, draws the detection bounding box(es) onto it, and
+retains it so operators can visually confirm *what* was detected. The
+BearClawWeb dashboard renders these as thumbnails on each "Recent Alerts" card.
+
+### Data flow
+
+```text
+ingest manager        service.processTask           state.Aggregator         snapshot.Store        MCP server            BearClawWeb
+(captures frame,  ->  (holds the exact          ->  (Ingest returns the  ->  (annotated JPEG   ->  GET /admin/alerts/ ->  Home::AlertsController
+ submits FrameTask     triggering frame in           alerts that fired        keyed by alert ID,    {id}/snapshot          proxies; alert-snapshot
+ with FrameB64)        task.FrameB64)                on this call)            bounded ring)         (bearer or ?token=)    Stimulus controller shows)
+```
+
+Key point: the frame is the **locally captured** one already present in
+`FrameTask.FrameB64` at `internal/service/service.go`. It is **not** re-fetched
+and is **never** forwarded to the inference worker, so detection snapshots are
+independent of the `privacy.frame_buffer_enabled` gate (which only governs the
+worker call). Annotation matches detections to the alert by `label` + `zone_id`
+and draws every matching box.
+
+### Code map
+
+| Concern | Location |
+| --- | --- |
+| Config flag | `internal/config/config.go` → `PrivacyConfig.DetectionSnapshotsEnabled` (`privacy.detection_snapshots_enabled`) |
+| Fired-alert signal | `internal/state/aggregator.go` → `Ingest` / `detectTransitionsLocked` return `[]Alert` |
+| Capture + annotate | `internal/service/service.go` → `captureSnapshots`; `internal/snapshot/annotate.go` |
+| Storage | `internal/snapshot/store.go` → `Store` (bounded in-memory ring) |
+| Wiring | `cmd/koala-orchestrator/main.go` (creates the store when the flag is on) |
+| Serve | `internal/mcp/server.go` → `alertSnapshot`, route `/admin/alerts/{id}/snapshot` |
+
+### Storage model (current)
+
+- **In-memory only.** `snapshot.Store` is a bounded map keyed by alert ID,
+  capacity `snapshot.DefaultMax` (200). Oldest entries are evicted first.
+- **Lifecycle mirrors the alert ring.** The aggregator keeps the newest 200
+  alerts (`state.defaultMaxAlerts`); the snapshot store keeps the newest 200
+  frames. They are inserted together, so a snapshot exists for roughly every
+  retained alert. Both are **lost on restart** — this is deliberate and keeps
+  the two structures consistent.
+- **Missing snapshots are graceful.** Alerts older than the deploy, or evicted
+  alerts, return `404` from the serve endpoint; the dashboard's `alert-snapshot`
+  Stimulus controller hides the figure instead of showing a broken image.
+- **Serving is cache-friendly.** An alert ID maps to a fixed frame, so the
+  endpoint sends `Cache-Control: immutable`.
+
+### Configuration
+
+```yaml
+privacy:
+  detection_snapshots_enabled: true   # default false in code; on in the deployed config
+```
+
+Default is **off** in code (privacy-by-default stance). It is enabled in
+`configs/koala.yaml` and in the Blink provision heredoc (`blink.toml`) so the
+homelab deploy ships with it on. Disabling the flag stops capture entirely and
+the serve endpoint returns `404` for every alert.
+
+### Future refactors (intended seams)
+
+The storage boundary is deliberately narrow so these are low-risk changes:
+
+- **Change storage location (disk / object store / DB).** `snapshot.Store` is
+  the only thing that holds bytes. Extract its `Put`/`Get` into a `Store`
+  interface and provide an alternate implementation (e.g. write JPEGs under a
+  configurable `privacy.snapshot_dir` with a retention sweeper, or push to S3).
+  `service.captureSnapshots` and `mcp.alertSnapshot` already depend only on
+  `Put`/`Get(id)`, so they need no changes. Add the path/retention knobs to
+  `PrivacyConfig` and wire them in `main.go`.
+- **Persist across restarts.** Requires persisting the alert ring too (today
+  both are in-memory), or decoupling snapshot retention from alert retention and
+  keying lookups purely by alert ID. Decide whether evicted-alert snapshots
+  should remain reachable.
+- **Store short video clips, not single frames.** This is the larger change: the
+  ingest manager currently buffers only the *latest* frame per camera
+  (`latestFrames` in `internal/ingest/manager.go`). A clip needs a rolling
+  pre-/post-roll frame buffer per camera (a ring of recent frames + a few
+  seconds of capture after the trigger), assembled into an MP4. The store would
+  hold clip bytes/paths instead of a JPEG, and the serve endpoint would set
+  `Content-Type: video/mp4`. The alert→media keying and the dashboard proxy stay
+  the same; the new cost is buffering memory/CPU on the Jetson and encode time.
+- **Retention tuning.** `snapshot.NewStore(max)` takes the cap; today `main.go`
+  passes `0` (→ `DefaultMax`). Surface it as `privacy.snapshot_retention` if the
+  fixed 200 becomes a constraint.
+
+The BearClawWeb side is storage-agnostic: it proxies bytes through
+`Home::AlertsController#snapshot` → `KoalaClient#alert_snapshot` and never sees
+the Koala bearer token. Switching Koala to disk/clips requires no Rails changes
+beyond possibly the `<img>` → `<video>` element if clips land.
+
 ## Secure packaging command
 
 Generate encrypted/signed bundle + signed manifest:

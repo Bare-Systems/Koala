@@ -7,6 +7,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Added a per-camera `run_detection` flag (config + registry). Only flagged cameras forward frames to the YOLO inference worker; all cameras still capture and buffer the latest frame for live snapshots. Conserves Jetson GPU/CPU when many cameras stream but only a subset needs detection. Defaults to off; `cam_1` (front door) is the canonical detection camera.
+- Added a detection-alerts model in the state aggregator that emits an alert on each absent→present rising edge for a tracked entity (person/package) per zone, instead of treating a quiet scene as "stale". Alerts are retained in a bounded ring buffer (newest 200) and re-fire only after the entity goes absent and reappears.
+- Exposed recent alerts via a new MCP tool `koala.get_recent_alerts` and an admin REST endpoint `GET /admin/alerts?limit=` (newest first).
+- Added detection snapshots: when an alert fires, the triggering camera frame is captured, annotated with the detection bounding box(es), and retained in a bounded in-memory ring (newest 200, keyed by alert ID, mirroring the alert ring's lifecycle). Served via `GET /admin/alerts/{id}/snapshot` (JPEG; bearer header or `?token=` for `<img>` use). Gated by a new `privacy.detection_snapshots_enabled` flag (default off; on in the deployed config). The snapshot uses the locally captured frame and is never forwarded to the inference worker, so it is independent of `frame_buffer_enabled`. The README "Detection snapshots" section documents the data flow, code map, in-memory storage model, and the intended seams for future refactors (disk/object-store backend, restart persistence, short video clips, retention tuning).
+
+### Fixed
+
+- Fixed persistent `inference: degraded` state caused by Python 3.10 `datetime.fromisoformat` rejecting nanosecond-precision timestamps marshaled by Go's `time.Time` (9 decimal digits vs. the 6-digit maximum Python 3.10 accepts). Worker now truncates sub-microsecond digits before parsing.
+- Fixed `_run_model` crashing with `PIL.UnidentifiedImageError` on empty or corrupt frame bytes; now returns empty detections gracefully instead of propagating a 500 error that triggered `markDegraded`.
+- Added `except Exception` around the YOLO `predict` call in `_run_model` so unexpected GPU or model errors return empty detections rather than crashing the worker request handler.
+- Added `except Exception` around `detector.analyze()` in `server.py` so any unhandled errors return a proper HTTP 500 JSON response instead of a broken pipe, preventing Go client from seeing a connection error.
+- Changed `ingest: backpressure` reporting to use current queue depth (≥75% full) instead of the cumulative drop counter, which never resets. This prevents a transient queue burst from permanently marking ingest as backpressure across restarts.
+- Backpressure no longer escalates the overall system status to `degraded`. A full ingest queue is a throughput limitation (some frames skipped) but inference quality is unaffected for the frames that are processed.
+- Bumped inference HTTP client timeout from 1500 ms to 5000 ms so YOLO inference (~215 ms on Jetson GPU) has sufficient headroom.
+
+- Fixed shell quoting bug in `blink.toml` inline tests: `Authorization: Bearer $(grep ...)` was inside single quotes so the token was never expanded, causing all authenticated orchestrator curl calls to fail silently. Fixed by extracting the token to a variable first (`T=$(grep ...); curl ... -H "Authorization: Bearer $T"`). Affected `live-detections`, `zone-state-raw`, `ingest-status`, and `ingest-raw` tests.
+
 ### Changed
 
 - Koala is now HTTP-only: worker inference stays private on `6704` and the orchestrator exposes the supported REST + MCP surfaces on `6705`

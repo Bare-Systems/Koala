@@ -63,8 +63,8 @@ func TestMCPTransport_ToolsList(t *testing.T) {
 	}
 	result := payload["result"].(map[string]any)
 	tools := result["tools"].([]any)
-	if len(tools) != 4 {
-		t.Fatalf("expected 4 tools, got %d", len(tools))
+	if len(tools) != 5 {
+		t.Fatalf("expected 5 tools, got %d", len(tools))
 	}
 	for _, rawTool := range tools {
 		tool := rawTool.(map[string]any)

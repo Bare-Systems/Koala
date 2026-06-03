@@ -18,6 +18,7 @@ import (
 	"github.com/Bare-Systems/Koala/internal/ingest"
 	"github.com/Bare-Systems/Koala/internal/mcp"
 	"github.com/Bare-Systems/Koala/internal/service"
+	"github.com/Bare-Systems/Koala/internal/snapshot"
 	"github.com/Bare-Systems/Koala/internal/state"
 	"github.com/Bare-Systems/Koala/internal/update"
 	"github.com/Bare-Systems/Koala/internal/zone"
@@ -95,6 +96,10 @@ func main() {
 	svc.FrameBufferEnabled = cfg.Privacy.FrameBufferEnabled
 	if !cfg.Privacy.FrameBufferEnabled {
 		log.Printf("startup: privacy=metadata-only frame_buffer_enabled=false")
+	}
+	if cfg.Privacy.DetectionSnapshotsEnabled {
+		svc.Snapshots = snapshot.NewStore(0)
+		log.Printf("startup: detection_snapshots=enabled retain=%d", snapshot.DefaultMax)
 	}
 	auditStore, err := audit.NewSQLiteStore(cfg.Update.AuditDBPath)
 	if err != nil {
@@ -399,6 +404,7 @@ func toCameras(cfg config.Config) []camera.Camera {
 			ONVIFURL:            c.ONVIFURL,
 			ZoneID:              c.ZoneID,
 			FrontDoor:           c.FrontDoor,
+			RunDetection:        c.RunDetection,
 			Status:              camera.StatusUnknown,
 			MaxFPS:              c.MaxFPS,
 			ConfidenceThreshold: c.ConfidenceThreshold,

@@ -120,8 +120,13 @@ class YoloDetector:
         from PIL import Image  # type: ignore  # provided by ultralytics deps
 
         frame_bytes = base64.b64decode(req.frame_b64 or "")
-        image = Image.open(io.BytesIO(frame_bytes))
-        raw_output = self._model.predict(image, verbose=False)
+        if not frame_bytes:
+            return []
+        try:
+            image = Image.open(io.BytesIO(frame_bytes))
+            raw_output = self._model.predict(image, verbose=False)
+        except Exception:
+            return []
         detections: list[Detection] = []
         ts = req.captured_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         for result in raw_output:

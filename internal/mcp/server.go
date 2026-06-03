@@ -107,6 +107,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/admin/updates/rollouts/get", s.wrapAuth(s.rolloutGet))
 	mux.HandleFunc("/admin/updates/rollouts/list", s.wrapAuth(s.rolloutList))
 	mux.HandleFunc("/admin/ingest/status", s.wrapAuth(s.ingestStatus))
+	mux.HandleFunc("/admin/alerts", s.wrapAuth(s.recentAlerts))
+	mux.HandleFunc("/admin/alerts/{id}/snapshot", s.alertSnapshot)
 	mux.HandleFunc("/admin/cameras/{id}/snapshot", s.cameraSnapshot)
 	mux.HandleFunc("/admin/config", s.wrapAuth(s.getConfig))
 	mux.HandleFunc("/admin/auth/rotate-token", s.wrapAuth(s.rotateToken))
@@ -334,6 +336,51 @@ func (s *Server) ingestStatus(w http.ResponseWriter, _ *http.Request) {
 		"explanation": "ingest worker status snapshot",
 		"data":        status,
 	})
+}
+
+// recentAlerts serves recent detection alerts (person/package rising-edge
+// transitions), newest first. Supports an optional ?limit= query param.
+func (s *Server) recentAlerts(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	alerts := s.service.RecentAlerts(limit)
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"explanation": "recent detection alerts",
+		"data": map[string]any{
+			"alerts": alerts,
+			"count":  len(alerts),
+		},
+	})
+}
+
+// alertSnapshot serves the stored JPEG frame captured when an alert fired,
+// annotated with the detection box(es). Auth is accepted via Authorization:
+// Bearer header or ?token= query param so <img src="..."> tags can load it
+// directly. Returns 404 when no snapshot exists for the alert (capture disabled,
+// alert evicted, or no frame was available).
+func (s *Server) alertSnapshot(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
+	if token == "" || token != s.currentToken() {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	frame, ok := s.service.Snapshot(r.PathValue("id"))
+	if !ok {
+		http.Error(w, "no snapshot available", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Content-Length", strconv.Itoa(len(frame)))
+	_, _ = w.Write(frame)
 }
 
 // cameraSnapshot serves the latest captured JPEG frame for a camera.

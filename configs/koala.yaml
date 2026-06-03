@@ -23,6 +23,9 @@ update:
   audit_db_path: "/tmp/koala/audit/events.db"
   staging_dir: "/tmp/koala/staging"
   active_dir: "/tmp/koala/active"
+privacy:
+  frame_buffer_enabled: false
+  detection_snapshots_enabled: true
 runtime:
   queue_size: 64
   freshness_window_seconds: 90
@@ -39,6 +42,7 @@ cameras:
     zone_id: "front_door"
     front_door: true
     probe_at_boot: true
+    run_detection: true
   - id: "cam_2"
     name: "CAM 2"
     rtsp_url: "rtsp://192.168.86.46:554/user=admin&password=&channel=2&stream=0.sdp?real_stream"

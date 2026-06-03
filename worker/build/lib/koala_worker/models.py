@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
 from typing import Any
@@ -38,7 +39,10 @@ class AnalyzeRequest:
     def from_dict(cls, payload: dict[str, Any]) -> "AnalyzeRequest":
         captured_raw = payload.get("captured_at")
         if isinstance(captured_raw, str):
-            captured = datetime.fromisoformat(captured_raw.replace("Z", "+00:00"))
+            # Truncate sub-microsecond precision: Python 3.10 fromisoformat only
+            # accepts up to 6 fractional digits, but Go marshals time.Time with 9.
+            normalized = re.sub(r'(\.\d{6})\d+', r'\1', captured_raw)
+            captured = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
         else:
             captured = datetime.now(timezone.utc)
 

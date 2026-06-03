@@ -32,7 +32,11 @@ class WorkerHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.BAD_REQUEST, {"status": "invalid", "error": str(exc)})
             return
 
-        detections = [d.to_dict() for d in self.detector.analyze(request)]
+        try:
+            detections = [d.to_dict() for d in self.detector.analyze(request)]
+        except Exception as exc:
+            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"status": "error", "error": str(exc)})
+            return
         self._send_json(
             HTTPStatus.OK,
             {

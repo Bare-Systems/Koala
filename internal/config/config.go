@@ -35,6 +35,11 @@ type PrivacyConfig struct {
 	// MetadataRetentionSeconds caps how long detection metadata is kept in
 	// the sliding-window aggregator. 0 means use runtime.freshness_window_seconds.
 	MetadataRetentionSeconds int `yaml:"metadata_retention_seconds"`
+	// DetectionSnapshotsEnabled controls whether the triggering frame is captured
+	// and retained (annotated with detection boxes) when an alert fires. Default
+	// false. Independent of frame_buffer_enabled: snapshots use the locally
+	// captured frame and are never forwarded to the inference worker.
+	DetectionSnapshotsEnabled bool `yaml:"detection_snapshots_enabled"`
 }
 
 type ServiceConfig struct {
@@ -92,6 +97,10 @@ type CameraConfig struct {
 	ZoneID              string  `yaml:"zone_id"`
 	FrontDoor           bool    `yaml:"front_door"`
 	ProbeAtBoot         bool    `yaml:"probe_at_boot"`
+	// RunDetection gates whether this camera's frames are forwarded to the YOLO
+	// inference worker. When false, the camera still streams live frames (buffered
+	// for snapshots) but is excluded from detection — conserving GPU/CPU.
+	RunDetection        bool    `yaml:"run_detection"`
 	ConfidenceThreshold float64 `yaml:"confidence_threshold"` // overrides zone/global default; 0 = use default
 	MaxFPS              int     `yaml:"max_fps"`              // per-camera frame rate cap; 0 = use runtime default
 }

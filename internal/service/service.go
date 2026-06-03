@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/Bare-Systems/Koala/internal/camera"
 	"github.com/Bare-Systems/Koala/internal/inference"
+	"github.com/Bare-Systems/Koala/internal/snapshot"
 	"github.com/Bare-Systems/Koala/internal/state"
 	"github.com/Bare-Systems/Koala/internal/telemetry"
 	"github.com/Bare-Systems/Koala/internal/zone"
@@ -125,6 +127,10 @@ type Service struct {
 	// the inference call — metadata-only privacy mode.
 	FrameBufferEnabled bool
 
+	// Snapshots, when non-nil, retains the triggering frame (annotated with
+	// detection boxes) for each alert that fires. Nil disables capture.
+	Snapshots *snapshot.Store
+
 	queue       chan FrameTask
 	queueCap    int
 	start       time.Time
@@ -224,8 +230,41 @@ func (s *Service) processTask(ctx context.Context, task FrameTask) {
 			BBox:       d.BBox,
 		})
 	}
-	s.Aggregator.Ingest(normalized)
+	fired := s.Aggregator.Ingest(normalized)
 	s.degraded.Store(false)
+	s.captureSnapshots(fired, normalized, task.FrameB64)
+}
+
+// captureSnapshots stores the triggering frame for each newly fired alert,
+// annotated with the detection boxes that share the alert's label and zone.
+// The frame is the locally captured task frame, independent of the privacy
+// frame-buffer gate (which only governs what is sent to the inference worker).
+func (s *Service) captureSnapshots(fired []state.Alert, normalized []state.Detection, frameB64 string) {
+	if s.Snapshots == nil || len(fired) == 0 || frameB64 == "" {
+		return
+	}
+	frame, err := base64.StdEncoding.DecodeString(frameB64)
+	if err != nil || len(frame) == 0 {
+		return
+	}
+	for _, alert := range fired {
+		var boxes []zone.BBox
+		for _, d := range normalized {
+			if d.Label == alert.Label && d.ZoneID == alert.ZoneID {
+				boxes = append(boxes, d.BBox)
+			}
+		}
+		s.Snapshots.Put(alert.ID, snapshot.Annotate(frame, boxes))
+	}
+}
+
+// Snapshot returns the stored JPEG snapshot for the given alert ID, if capture
+// is enabled and a snapshot exists.
+func (s *Service) Snapshot(id string) ([]byte, bool) {
+	if s.Snapshots == nil {
+		return nil, false
+	}
+	return s.Snapshots.Get(id)
 }
 
 func (s *Service) markDegraded(err error) {
@@ -267,11 +306,11 @@ func (s *Service) Health() Health {
 		status = "degraded"
 	}
 	ingest := "ok"
-	if s.dropped.Load() > 0 {
+	// Report backpressure when the queue is currently under pressure (≥75% full).
+	// Backpressure is a throughput limitation, not a failure — inference quality
+	// is unaffected for the frames that are processed. Don't escalate to degraded.
+	if s.queueCap > 0 && len(s.queue)*100/s.queueCap >= 75 {
 		ingest = "backpressure"
-		if status == "ok" {
-			status = "degraded"
-		}
 	}
 	return Health{
 		Status:     status,
@@ -284,6 +323,11 @@ func (s *Service) Health() Health {
 
 func (s *Service) ZoneState(zoneID string) state.ZoneState {
 	return s.Aggregator.Zone(zoneID)
+}
+
+// RecentAlerts returns up to limit most-recent detection alerts, newest first.
+func (s *Service) RecentAlerts(limit int) []state.Alert {
+	return s.Aggregator.RecentAlerts(limit)
 }
 
 func (s *Service) DoorPackageState(cameraID string) (bool, float64, time.Time, error) {

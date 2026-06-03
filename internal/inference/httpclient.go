@@ -20,7 +20,7 @@ type HTTPClient struct {
 func NewHTTPClient(baseURL string) *HTTPClient {
 	return &HTTPClient{
 		baseURL: baseURL,
-		client:  &http.Client{Timeout: 1500 * time.Millisecond},
+		client:  &http.Client{Timeout: 5000 * time.Millisecond},
 	}
 }
 

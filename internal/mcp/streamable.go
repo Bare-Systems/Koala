@@ -172,6 +172,18 @@ func (s *Server) mcpTools() []mcpTool {
 				"additionalProperties": false,
 			},
 		},
+		{
+			Name:        "koala.get_recent_alerts",
+			Title:       "Get Recent Alerts",
+			Description: "Return recent detection alerts (person/package appearing in a zone), newest first.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"limit": map[string]any{"type": "integer"},
+				},
+				"additionalProperties": false,
+			},
+		},
 	}
 }
 
@@ -452,6 +464,8 @@ func (s *Server) callTool(name string, input map[string]any) (ToolResponse, int)
 		return s.getZoneStateResponse(input)
 	case "koala.check_package_at_door":
 		return s.checkPackageAtDoorResponse(input)
+	case "koala.get_recent_alerts":
+		return s.getRecentAlertsResponse(input)
 	default:
 		return ToolResponse{
 			Status:      "error",
@@ -574,6 +588,35 @@ func (s *Server) checkPackageAtDoorResponse(input map[string]any) (ToolResponse,
 			"confidence":      confidence,
 			"observed_at":     observedAt.UTC().Format(time.RFC3339),
 			"stale":           stale,
+		},
+	}, http.StatusOK
+}
+
+func (s *Server) getRecentAlertsResponse(input map[string]any) (ToolResponse, int) {
+	limit, err := readOptionalInt(input, "limit")
+	if err != nil {
+		return ToolResponse{
+			Status:      "error",
+			Explanation: err.Error(),
+			ErrorCode:   ErrCodeInvalidInput,
+			NextAction:  "provide limit as an integer or omit it",
+		}, http.StatusBadRequest
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	alerts := s.service.RecentAlerts(limit)
+	explanation := "recent detection alerts"
+	if len(alerts) == 0 {
+		explanation = "no recent detection alerts"
+	}
+	return ToolResponse{
+		Status:      "ok",
+		Explanation: explanation,
+		RiskLevel:   RiskLow,
+		Data: map[string]any{
+			"alerts": alerts,
+			"count":  len(alerts),
 		},
 	}, http.StatusOK
 }

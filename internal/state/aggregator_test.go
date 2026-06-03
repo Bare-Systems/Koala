@@ -84,6 +84,70 @@ func TestAggregatorTemporalSmoothing(t *testing.T) {
 	}
 }
 
+func TestAggregatorAlertOnRisingEdge(t *testing.T) {
+	now := time.Now().UTC()
+	agg := NewAggregator(120 * time.Second)
+
+	// First appearance → one alert.
+	agg.Ingest([]Detection{{
+		CameraID: "cam1", ZoneID: "front_door",
+		Label: "person", Confidence: 0.91, ObservedAt: now,
+	}})
+	alerts := agg.RecentAlerts(0)
+	if len(alerts) != 1 {
+		t.Fatalf("expected 1 alert on first appearance, got %d", len(alerts))
+	}
+	if alerts[0].Label != "person" || alerts[0].CameraID != "cam1" || alerts[0].ZoneID != "front_door" {
+		t.Fatalf("unexpected alert contents: %+v", alerts[0])
+	}
+
+	// Still present → no new alert (no continuous re-fire).
+	agg.Ingest([]Detection{{
+		CameraID: "cam1", ZoneID: "front_door",
+		Label: "person", Confidence: 0.93, ObservedAt: now.Add(time.Second),
+	}})
+	if got := len(agg.RecentAlerts(0)); got != 1 {
+		t.Fatalf("expected no new alert while still present, got %d total", got)
+	}
+}
+
+func TestAggregatorAlertRefiresAfterAbsence(t *testing.T) {
+	window := 20 * time.Millisecond
+	agg := NewAggregator(window)
+
+	// First appearance → alert #1.
+	agg.Ingest([]Detection{{
+		CameraID: "cam1", ZoneID: "front_door",
+		Label: "package", Confidence: 0.9, ObservedAt: time.Now().UTC(),
+	}})
+	if got := len(agg.RecentAlerts(0)); got != 1 {
+		t.Fatalf("expected 1 alert after first appearance, got %d", got)
+	}
+
+	// Wait past the window so the first detection expires, then ingest an
+	// unrelated label to trigger pruning — package transitions to absent.
+	time.Sleep(window * 3)
+	agg.Ingest([]Detection{{
+		CameraID: "cam1", ZoneID: "front_door",
+		Label: "person", Confidence: 0.9, ObservedAt: time.Now().UTC(),
+	}})
+
+	// Package reappears with a fresh timestamp → a second alert fires.
+	agg.Ingest([]Detection{{
+		CameraID: "cam1", ZoneID: "front_door",
+		Label: "package", Confidence: 0.95, ObservedAt: time.Now().UTC(),
+	}})
+	pkgAlerts := 0
+	for _, a := range agg.RecentAlerts(0) {
+		if a.Label == "package" {
+			pkgAlerts++
+		}
+	}
+	if pkgAlerts != 2 {
+		t.Fatalf("expected package alert to re-fire after absence, got %d package alerts", pkgAlerts)
+	}
+}
+
 func TestAggregatorSmoothingDisabledByDefault(t *testing.T) {
 	// Without minDetections, a single detection marks entity present.
 	now := time.Now().UTC()

@@ -26,6 +26,7 @@ type Camera struct {
 	ONVIFURL            string     `json:"onvif_url,omitempty"`
 	ZoneID              string     `json:"zone_id"`
 	FrontDoor           bool       `json:"front_door"`
+	RunDetection        bool       `json:"run_detection"`
 	Status              Status     `json:"status"`
 	Capability          Capability `json:"capability"`
 	MaxFPS              int        `json:"max_fps,omitempty"`              // 0 = use manager default

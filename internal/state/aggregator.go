@@ -2,11 +2,26 @@ package state
 
 import (
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/Bare-Systems/Koala/internal/zone"
 )
+
+const defaultMaxAlerts = 200
+
+// Alert records a single absent→present transition for a tracked entity in a
+// zone. Alerts are the user-facing signal that "something happened" — they fire
+// only on the rising edge, not continuously while an entity remains present.
+type Alert struct {
+	ID         string    `json:"id"`
+	ZoneID     string    `json:"zone_id"`
+	CameraID   string    `json:"camera_id"`
+	Label      string    `json:"label"`
+	Confidence float64   `json:"confidence"`
+	ObservedAt time.Time `json:"observed_at"`
+}
 
 type Detection struct {
 	CameraID   string    `json:"camera_id"`
@@ -40,6 +55,13 @@ type Aggregator struct {
 	minDetections int // 0 = disabled; >0 = min count required to declare entity present
 	history       map[string][]Detection
 	tracked       map[string]struct{}
+
+	// present tracks the last-known presence of each tracked label per zone so
+	// that alerts fire only on the absent→present rising edge.
+	present   map[string]map[string]bool
+	alerts    []Alert
+	maxAlerts int
+	alertSeq  int64
 }
 
 // NewAggregator creates an aggregator with the given freshness window.
@@ -59,10 +81,15 @@ func NewAggregator(window time.Duration, minDetections ...int) *Aggregator {
 		minDetections: n,
 		history:       map[string][]Detection{},
 		tracked:       map[string]struct{}{"package": {}, "person": {}},
+		present:       map[string]map[string]bool{},
+		maxAlerts:     defaultMaxAlerts,
 	}
 }
 
-func (a *Aggregator) Ingest(detections []Detection) {
+// Ingest records detections and returns the alerts that fired on this call
+// (absent→present rising edges). The return value lets callers capture the
+// triggering frame for each new alert; callers that don't need it may ignore it.
+func (a *Aggregator) Ingest(detections []Detection) []Alert {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -82,6 +109,86 @@ func (a *Aggregator) Ingest(detections []Detection) {
 		}
 		a.history[zoneID] = filtered
 	}
+
+	return a.detectTransitionsLocked(now)
+}
+
+// detectTransitionsLocked compares current presence to the last-known presence
+// for each zone and emits an Alert on every absent→present rising edge. It
+// returns the alerts that fired on this call. The caller must hold a.mu.
+func (a *Aggregator) detectTransitionsLocked(now time.Time) []Alert {
+	var fired []Alert
+	for zoneID, zoneDetections := range a.history {
+		reps := a.presentReps(zoneDetections)
+		zonePresent := a.present[zoneID]
+		if zonePresent == nil {
+			zonePresent = map[string]bool{}
+			a.present[zoneID] = zonePresent
+		}
+		for label := range a.tracked {
+			rep, isPresent := reps[label]
+			was := zonePresent[label]
+			if isPresent && !was {
+				a.alertSeq++
+				alert := Alert{
+					ID:         strconv.FormatInt(a.alertSeq, 10),
+					ZoneID:     zoneID,
+					CameraID:   rep.CameraID,
+					Label:      label,
+					Confidence: rep.Confidence,
+					ObservedAt: rep.ObservedAt,
+				}
+				a.alerts = append(a.alerts, alert)
+				if len(a.alerts) > a.maxAlerts {
+					a.alerts = a.alerts[len(a.alerts)-a.maxAlerts:]
+				}
+				fired = append(fired, alert)
+			}
+			zonePresent[label] = isPresent
+		}
+	}
+	return fired
+}
+
+// presentReps returns the representative detection (latest, highest-confidence)
+// for each tracked label currently considered present in the given window-pruned
+// detections, applying the same smoothing gate used by Zone().
+func (a *Aggregator) presentReps(zoneDetections []Detection) map[string]Detection {
+	countByLabel := map[string]int{}
+	for _, d := range zoneDetections {
+		countByLabel[d.Label]++
+	}
+	reps := map[string]Detection{}
+	for _, d := range zoneDetections {
+		if _, ok := a.tracked[d.Label]; !ok {
+			continue
+		}
+		if a.minDetections > 0 && countByLabel[d.Label] < a.minDetections {
+			continue
+		}
+		cur, ok := reps[d.Label]
+		if !ok || d.ObservedAt.After(cur.ObservedAt) || d.Confidence > cur.Confidence {
+			reps[d.Label] = d
+		}
+	}
+	return reps
+}
+
+// RecentAlerts returns up to limit most-recent alerts, newest first. A limit of
+// 0 or less returns all retained alerts.
+func (a *Aggregator) RecentAlerts(limit int) []Alert {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	n := len(a.alerts)
+	if limit > 0 && limit < n {
+		n = limit
+	}
+	out := make([]Alert, 0, n)
+	for i := len(a.alerts) - 1; i >= 0 && len(out) < n; i-- {
+		out = append(out, a.alerts[i])
+	}
+	return out
 }
 
 func (a *Aggregator) Zone(zoneID string) ZoneState {
