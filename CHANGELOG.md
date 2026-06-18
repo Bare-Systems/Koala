@@ -9,6 +9,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- CI: added `publish` job to `.github/workflows/ci.yml` that builds and pushes `ghcr.io/bare-systems/koala-orchestrator` and `ghcr.io/bare-systems/koala-worker` to GitHub Container Registry on every push to `main`; builds without pushing on all other branches and PRs.
+
+### Added
+
 - Added a per-camera `run_detection` flag (config + registry). Only flagged cameras forward frames to the YOLO inference worker; all cameras still capture and buffer the latest frame for live snapshots. Conserves Jetson GPU/CPU when many cameras stream but only a subset needs detection. Defaults to off; `cam_1` (front door) is the canonical detection camera.
 - Added a detection-alerts model in the state aggregator that emits an alert on each absent→present rising edge for a tracked entity (person/package) per zone, instead of treating a quiet scene as "stale". Alerts are retained in a bounded ring buffer (newest 200) and re-fire only after the entity goes absent and reappears.
 - Exposed recent alerts via a new MCP tool `koala.get_recent_alerts` and an admin REST endpoint `GET /admin/alerts?limit=` (newest first).
