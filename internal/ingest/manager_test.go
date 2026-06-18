@@ -212,7 +212,7 @@ func TestManagerDropsFramesWhenQueueFull(t *testing.T) {
 
 func TestManagerSkipsCameraWithNoRTSPURL(t *testing.T) {
 	registry := camera.NewRegistry([]camera.Camera{
-		{ID: "cam_no_url", ZoneID: "front_door"},                                    // no RTSP — should be skipped
+		{ID: "cam_no_url", ZoneID: "front_door"},                                   // no RTSP — should be skipped
 		{ID: "cam_ok", RTSPURL: "rtsp://example", ZoneID: "z", RunDetection: true}, // has RTSP — should be processed
 	})
 	snapshotter := &fakeSnapshotter{payload: []byte("jpeg")}

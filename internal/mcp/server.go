@@ -216,9 +216,6 @@ func (s *Server) writeToolError(w http.ResponseWriter, httpCode int, errCode, ex
 	})
 }
 
-// bodyTooLarge is the sentinel error type from http.MaxBytesReader.
-type bodyTooLargeError interface{ Error() string }
-
 func (s *Server) decodeToolRequest(r *http.Request) (ToolRequest, error) {
 	if r.Method == http.MethodGet {
 		return ToolRequest{Input: map[string]any{}}, nil
@@ -555,8 +552,8 @@ func (s *Server) updateSecurity(w http.ResponseWriter, r *http.Request) {
 		s.writeToolError(w, http.StatusBadRequest, ErrCodeInvalidInput, err.Error(), "")
 		return
 	}
-	attempts, _ := health["unknown_key_attempts"]
-	alerts, _ := health["unknown_key_alerts"]
+	attempts := health["unknown_key_attempts"]
+	alerts := health["unknown_key_alerts"]
 	if attempts == nil {
 		attempts = map[string]any{"manifest_unknown": map[string]int{}, "bundle_unknown": map[string]int{}}
 	}
@@ -920,7 +917,7 @@ func (s *Server) rotateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.token.Store(&newToken)
-	reqID, _ := w.Header()["X-Request-Id"]
+	reqID := w.Header()["X-Request-Id"]
 	log.Printf("service=mcp event=token_rotated request_id=%v", reqID)
 	s.writeJSON(w, http.StatusOK, map[string]any{
 		"status":      "ok",

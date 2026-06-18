@@ -184,9 +184,7 @@ func (v *RotatingVerifier) RecentUnknownKeyAlerts(limit int) []UnknownKeyAlert {
 	}
 	start := len(v.alerts) - limit
 	out := make([]UnknownKeyAlert, 0, limit)
-	for _, alert := range v.alerts[start:] {
-		out = append(out, alert)
-	}
+	out = append(out, v.alerts[start:]...)
 	return out
 }
 

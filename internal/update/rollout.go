@@ -3,7 +3,6 @@ package update
 import (
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -283,8 +282,4 @@ func buildBatches(deviceIDs []string, mode RolloutMode, batchSize int) ([][]stri
 		return out, nil
 	}
 	return nil, fmt.Errorf("unsupported rollout mode: %s", mode)
-}
-
-func parseRolloutMode(mode string) RolloutMode {
-	return RolloutMode(strings.ToLower(strings.TrimSpace(mode)))
 }

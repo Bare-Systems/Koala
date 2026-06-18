@@ -353,12 +353,12 @@ func buildConfigSnapshot(cfg config.Config) map[string]any {
 			"address":   cfg.Service.Address,
 		},
 		"runtime": map[string]any{
-			"freshness_window_s":      cfg.Runtime.FreshnessWindow,
-			"queue_size":              cfg.Runtime.QueueSize,
-			"min_detections":          cfg.Runtime.MinDetections,
-			"confidence_threshold":    cfg.Runtime.ConfidenceThreshold,
-			"enable_stream_workers":   cfg.Runtime.EnableStreamWorkers,
-			"stream_sample_fps":       cfg.Runtime.StreamSampleFPS,
+			"freshness_window_s":    cfg.Runtime.FreshnessWindow,
+			"queue_size":            cfg.Runtime.QueueSize,
+			"min_detections":        cfg.Runtime.MinDetections,
+			"confidence_threshold":  cfg.Runtime.ConfidenceThreshold,
+			"enable_stream_workers": cfg.Runtime.EnableStreamWorkers,
+			"stream_sample_fps":     cfg.Runtime.StreamSampleFPS,
 		},
 		"worker": map[string]any{
 			"url_set": cfg.Worker.URL != "",
@@ -369,8 +369,8 @@ func buildConfigSnapshot(cfg config.Config) map[string]any {
 			"poll_interval_s": cfg.Update.PollIntervalSeconds,
 			// sensitive fields (keys, tokens) are intentionally omitted
 		},
-		"cameras": cameras,
-		"zones":   zones,
+		"cameras":       cameras,
+		"zones":         zones,
 		"mcp_token_set": cfg.MCPToken != "",
 	}
 }

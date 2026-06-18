@@ -9,17 +9,17 @@ import (
 )
 
 type Config struct {
-	ConfigVersion string         `yaml:"config_version"`
-	ListenAddr    string         `yaml:"listen_addr"`
-	MCPToken      string         `yaml:"mcp_token"`
+	ConfigVersion string `yaml:"config_version"`
+	ListenAddr    string `yaml:"listen_addr"`
+	MCPToken      string `yaml:"mcp_token"`
 	// AllowedIPs is an optional list of IP addresses or CIDR ranges
 	// permitted to call the MCP server. Empty = allow all (default).
-	AllowedIPs []string      `yaml:"allowed_ips"`
-	Service    ServiceConfig `yaml:"service"`
-	Worker     WorkerConfig  `yaml:"worker"`
-	Update     UpdateConfig  `yaml:"update"`
-	Runtime    RuntimeConfig `yaml:"runtime"`
-	Privacy    PrivacyConfig `yaml:"privacy"`
+	AllowedIPs []string       `yaml:"allowed_ips"`
+	Service    ServiceConfig  `yaml:"service"`
+	Worker     WorkerConfig   `yaml:"worker"`
+	Update     UpdateConfig   `yaml:"update"`
+	Runtime    RuntimeConfig  `yaml:"runtime"`
+	Privacy    PrivacyConfig  `yaml:"privacy"`
 	Cameras    []CameraConfig `yaml:"cameras"`
 	Zones      []ZoneConfig   `yaml:"zones"`
 }
@@ -90,13 +90,13 @@ type RuntimeConfig struct {
 }
 
 type CameraConfig struct {
-	ID                  string  `yaml:"id"`
-	Name                string  `yaml:"name"`
-	RTSPURL             string  `yaml:"rtsp_url"`
-	ONVIFURL            string  `yaml:"onvif_url"`
-	ZoneID              string  `yaml:"zone_id"`
-	FrontDoor           bool    `yaml:"front_door"`
-	ProbeAtBoot         bool    `yaml:"probe_at_boot"`
+	ID          string `yaml:"id"`
+	Name        string `yaml:"name"`
+	RTSPURL     string `yaml:"rtsp_url"`
+	ONVIFURL    string `yaml:"onvif_url"`
+	ZoneID      string `yaml:"zone_id"`
+	FrontDoor   bool   `yaml:"front_door"`
+	ProbeAtBoot bool   `yaml:"probe_at_boot"`
 	// RunDetection gates whether this camera's frames are forwarded to the YOLO
 	// inference worker. When false, the camera still streams live frames (buffered
 	// for snapshots) but is excluded from detection — conserving GPU/CPU.
@@ -106,9 +106,9 @@ type CameraConfig struct {
 }
 
 type ZoneConfig struct {
-	ID                  string      `yaml:"id"`
-	Name                string      `yaml:"name"`
-	ConfidenceThreshold float64     `yaml:"confidence_threshold"` // overrides global default for all cameras in zone; 0 = use global
+	ID                  string  `yaml:"id"`
+	Name                string  `yaml:"name"`
+	ConfidenceThreshold float64 `yaml:"confidence_threshold"` // overrides global default for all cameras in zone; 0 = use global
 	// Polygon defines the region of interest in normalized (0–1) frame coordinates.
 	// Each element is [x, y]. If empty, no polygon filtering is applied.
 	Polygon        [][]float64 `yaml:"polygon"`

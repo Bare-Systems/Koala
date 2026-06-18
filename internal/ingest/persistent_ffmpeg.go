@@ -142,9 +142,7 @@ func (w *ffmpegWorker) LatestFrame(ctx context.Context) ([]byte, error) {
 		notify := w.notify
 		w.mu.Unlock()
 
-		if lastErr != nil {
-			// keep waiting for recovery unless context expires
-		}
+		// Keep waiting for recovery unless context expires.
 		select {
 		case <-ctx.Done():
 			if lastErr != nil {
