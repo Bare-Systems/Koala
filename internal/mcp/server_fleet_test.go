@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Bare-Systems/Koala/internal/camera"
 	"github.com/Bare-Systems/Koala/internal/service"
 	"github.com/Bare-Systems/Koala/internal/state"
 	"github.com/Bare-Systems/Koala/internal/update"
-	"time"
 )
 
 // newFleetServer returns an MCP server with the updater wired up.

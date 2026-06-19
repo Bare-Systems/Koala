@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -36,7 +36,7 @@ class AnalyzeRequest:
     captured_at: datetime
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "AnalyzeRequest":
+    def from_dict(cls, payload: dict[str, Any]) -> AnalyzeRequest:
         captured_raw = payload.get("captured_at")
         if isinstance(captured_raw, str):
             # Truncate sub-microsecond precision: Python 3.10 fromisoformat only

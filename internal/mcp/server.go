@@ -236,7 +236,7 @@ func (s *Server) decodeToolRequest(r *http.Request) (ToolRequest, error) {
 
 type payloadTooLargeErr struct{}
 
-func (e *payloadTooLargeErr) Error() string { return "request body too large" }
+func (e *payloadTooLargeErr) Error() string           { return "request body too large" }
 func (e *payloadTooLargeErr) IsPayloadTooLarge() bool { return true }
 
 func (s *Server) writeJSON(w http.ResponseWriter, code int, payload any) {

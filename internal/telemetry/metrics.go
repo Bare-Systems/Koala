@@ -81,12 +81,12 @@ func (c *Collector) Snapshot() map[string]any {
 	sampleCount := int64(len(c.latencies))
 	c.mu.Unlock()
 	return map[string]any{
-		"frame_total":                c.FrameTotal.Load(),
-		"frame_dropped_total":        c.FrameDropped.Load(),
-		"tool_request_total":         c.ToolRequestTotal.Load(),
-		"tool_error_total":           c.ToolErrorTotal.Load(),
-		"inference_latency_samples":  sampleCount,
-		"inference_latency_p50_ms":   c.InferenceLatencyPercentile(0.50),
-		"inference_latency_p95_ms":   c.InferenceLatencyPercentile(0.95),
+		"frame_total":               c.FrameTotal.Load(),
+		"frame_dropped_total":       c.FrameDropped.Load(),
+		"tool_request_total":        c.ToolRequestTotal.Load(),
+		"tool_error_total":          c.ToolErrorTotal.Load(),
+		"inference_latency_samples": sampleCount,
+		"inference_latency_p50_ms":  c.InferenceLatencyPercentile(0.50),
+		"inference_latency_p95_ms":  c.InferenceLatencyPercentile(0.95),
 	}
 }
