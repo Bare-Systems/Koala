@@ -61,7 +61,7 @@ jobs:
       - name: Install dependencies
         # Install base deps only (no ultralytics/GPU extras) so CI stays fast.
         # Tests use the deterministic fallback detector, not the live ML model.
-        run: pip install -e "." ruff mypy
+        run: python -m pip install -e "." ruff mypy pytest
 
       - name: ruff check
         run: ruff check .
