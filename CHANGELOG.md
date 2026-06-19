@@ -21,6 +21,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 
 - Fixed CI lint failures by normalizing Go formatting/imports and aligning worker Ruff linting with the package's Python 3.10 support while excluding generated build output.
+- Removed stale mypy suppressions from detector imports so the Python CI type-check step passes with the current dependency set.
 - Fixed persistent `inference: degraded` state caused by Python 3.10 `datetime.fromisoformat` rejecting nanosecond-precision timestamps marshaled by Go's `time.Time` (9 decimal digits vs. the 6-digit maximum Python 3.10 accepts). Worker now truncates sub-microsecond digits before parsing.
 - Fixed `_run_model` crashing with `PIL.UnidentifiedImageError` on empty or corrupt frame bytes; now returns empty detections gracefully instead of propagating a 500 error that triggered `markDegraded`.
 - Added `except Exception` around the YOLO `predict` call in `_run_model` so unexpected GPU or model errors return empty detections rather than crashing the worker request handler.

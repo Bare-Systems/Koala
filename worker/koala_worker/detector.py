@@ -82,7 +82,7 @@ class YoloDetector:
 
     def _maybe_load_model(self) -> Any:
         try:
-            from ultralytics import YOLO  # type: ignore
+            from ultralytics import YOLO
 
             model_dir = os.environ.get("KOALA_MODEL_DIR", ".")
             model_path = os.path.join(model_dir, "yolov8n.pt")
@@ -117,7 +117,7 @@ class YoloDetector:
 
     def _run_model(self, req: AnalyzeRequest) -> list[Detection]:
         # The actual Jetson path can be swapped to TensorRT export while preserving output schema.
-        from PIL import Image  # type: ignore  # provided by ultralytics deps
+        from PIL import Image  # provided by ultralytics deps
 
         frame_bytes = base64.b64decode(req.frame_b64 or "")
         if not frame_bytes:
